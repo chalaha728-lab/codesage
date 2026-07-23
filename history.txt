@@ -281,3 +281,55 @@ Assumptions / open questions:
   - Off-by-default + debounced + abort-on-new-keystroke is the safeguard
     against re-triggering the quota exhaustion that history.txt bugs #1-#5
     just fixed.
+--------------------------------------------------------------------
+[2026-07-23] PLAN — Claude (Sonnet)
+--------------------------------------------------------------------
+User request: "installed ... but after i click settings it goes blank" —
+webview crash regression in the Key Management panel after the live
+rotation widget was added.
+Planned changes:
+  - extension/webview-ui/build/assets/index.js: audit the KeyManagement
+    component for identifiers referenced but never declared via useState —
+    suspected cause of a render-time ReferenceError crashing the whole
+    settings webview (no error boundary => blank panel).
+--------------------------------------------------------------------
+[2026-07-23] RESULT — Claude (Sonnet)
+--------------------------------------------------------------------
+Status: DONE
+Root cause: the live-rotation widget (added in a prior session) referenced
+  csFlash, csLog, csReqCount, and csLiveOpen (plus their csSet* setters) in
+  JSX/render logic, but NONE of these were ever declared via V.useState() in
+  that component. A prior session's own history notes claimed this
+  event-listener/state infrastructure "already existed" from an earlier
+  compacted session — that claim was WRONG; grepping the actual shipped
+  bundle confirmed zero useState declarations and no
+  "codesage_keyRotationEvent" listener were present at all. Every render of
+  the KeyManagement panel threw a ReferenceError immediately, which
+  (with no React error boundary around it) blanked the entire settings
+  webview, not just the widget.
+What changed:
+  - extension/webview-ui/build/assets/index.js:
+    - Added the missing useState declarations:
+      [csReqCount,csSetReqCount], [csLog,csSetLog], [csFlash,csSetFlash],
+      [csLiveOpen,csSetLiveOpen].
+    - Wired the existing v() (codesage_getKeys refresh) callback to
+      populate csReqCount and csLog from the backend response
+      (codesage_requestCount, codesage_rotationLog).
+    - Added the actual "message" event listener (useEffect) for
+      codesage_keyRotationEvent that updates csLog, flashes csFlash, and
+      triggers a refresh — this listener did not exist before despite being
+      described as already present in an earlier history.txt entry.
+Verified how: node --check passed; manually audited the component source
+  (regex scan) confirming every cs*-prefixed identifier used in the
+  component now has a matching useState declaration, with zero
+  read-without-declare or setter-without-declare gaps remaining.
+Follow-ups / known gaps: this was NOT actually tested inside a live VS Code
+  webview (no way to run the extension in this environment) — verification
+  is static/source-level only (no ReferenceError possible now, but visual
+  correctness of the widget itself is unconfirmed). User should confirm the
+  Settings panel opens normally and the live rotation widget renders as
+  expected after reinstalling.
+  Lesson for future sessions: do not trust a prior history.txt entry's claim
+  that infrastructure "already exists" without grepping the actual current
+  file to confirm it — a previous session's description turned out to be
+  inaccurate here and shipped a crash.
