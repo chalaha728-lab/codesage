@@ -113,8 +113,8 @@ turn.
 Looked at how Portkey's open-source AI Gateway (github.com/Portkey-AI/gateway)
 implements reliability: fallback/rotation happens at the raw HTTP fetch
 layer, inline, per request — on a 429/401/403/5xx it immediately retries the
-SAME request against the next key/target before ever returning control to
-the caller. It never depends on rebuilding a client or waiting for a new
+SAME request against the next key/target before ever returning control to the
+caller. It never depends on rebuilding a client or waiting for a new
 turn.
 
 Implemented the same pattern: added csMakeRotatingFetch(providerId,
@@ -233,3 +233,51 @@ What changed:
 Root cause: n/a (process change).
 Verified how: manual review.
 Follow-ups: none.
+
+--------------------------------------------------------------------
+[2026-07-23 19:30 UTC] PLAN — Cline (Sonnet 4.5)
+--------------------------------------------------------------------
+User request: "lets add inline suggession or autocomplete feature" — add
+ghost-text inline code completions to CodeSage using the VS Code
+InlineCompletionItemProvider API.
+Planned changes:
+  - extension/autocomplete/inline-completion.js (NEW): self-contained CommonJS
+    module exporting a register(context) fn. Implements
+    vscode.InlineCompletionItemProvider — on each trigger (debounced ~400ms,
+    abort-on-new-keystroke), grabs prefix/suffix around cursor, reads the
+    configured API provider + key from Cline file storage
+    (~/.cline/data/globalState.json + secrets.json, via the clineGet/
+    clineGetSecret pattern from create-project/host.js), and calls the LLM
+    with the DEDICATED model from settings (user chose "dedicated fast model
+    field" over reusing the chat model). Routes to the right endpoint by
+    provider: OpenAI/OpenRouter -> /v1/chat/completions; Anthropic ->
+    /v1/messages; Gemini -> generateContent. Returns raw code as ghost text.
+    Errors (quota/network) are caught and silently drop the ghost text —
+    never a modal error mid-typing.
+  - extension/dist/extension.js (MODIFY, 1 line): after original.activate()
+    returns in the existing activate() wrapper, add
+    require("../autocomplete/inline-completion.js").register(context) in a
+    try/catch — mirrors exactly how registerCreateProjectCommand is already
+    wired in. The 23MB extension.original.js bundle is NOT touched.
+  - extension/package.json (MODIFY): add contributes.configuration block:
+    codesage.inlineCompletions.enabled (bool, default false — opt-in protects
+    key quota given the 429 chain just fixed), .model (string — user fills in
+    a fast/cheap model name), .debounceMs (default 400), .trigger
+    ("auto"|"manual"), .maxPrefixChars (3000), .maxSuffixChars (1500). Add
+    codesage.toggleInlineCompletions command + keybinding.
+  - AGENTS.md (MODIFY): note the new extension/autocomplete/ module so future
+    agents know it's a safe non-minified edit surface (distinct from the
+    minified bundles).
+Assumptions / open questions:
+  - The exact Cline storage key names for the API key (e.g. "apiKey" vs
+    provider-specific like "anthropicApiKey") were not confirmed because the
+    23MB bundle is too large to fetch/search wholesale. Will confirm during
+    implementation via a targeted grep; if not findable cleanly, a fallback
+    codesage.inlineCompletions.apiKey secret setting will be added so the
+    feature works regardless.
+  - Provider endpoint routing assumes OpenAI-compatible shape for OpenRouter
+    (true per OpenRouter docs). Anthropic + Gemini get provider-specific
+    request shapes.
+  - Off-by-default + debounced + abort-on-new-keystroke is the safeguard
+    against re-triggering the quota exhaustion that history.txt bugs #1-#5
+    just fixed.
