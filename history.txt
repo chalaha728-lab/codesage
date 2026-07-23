@@ -1,5 +1,12 @@
 CodeSage — Key Rotation Fix & Live Rotation UI — Session History
 ==================================================================
+NOTE TO ANY AI READING THIS: see AGENTS.md in repo root before doing
+anything — it defines the required protocol (read this file first, log a
+plan before editing, log a compressed result after). This file itself
+predates that protocol being written down, so entries below are in a freer
+narrative format; new entries should follow the PLAN/RESULT format in
+AGENTS.md from here on.
+==================================================================
 
 Source: patched from codesage-3_4_3-github-mcp-fixed-v2.vsix (compiled/minified
 host bundle + webview bundle; no original TypeScript source available, so all
@@ -182,3 +189,22 @@ via a force-push using a user-supplied fine-grained PAT. The repo had
 pre-existing content (~10MB) that was overwritten by the force-push — flagged
 to the user in case that needs recovering from GitHub's reflog before GC.
 Both PATs shared in-chat during this session should be revoked/rotated.
+
+--------------------------------------------------------------------
+[2026-07-23] RESULT — Claude (Sonnet)
+--------------------------------------------------------------------
+Status: DONE
+What changed:
+  - AGENTS.md (new): protocol file requiring any AI working on this repo to
+    read history.txt before starting, log a PLAN entry before editing, and
+    log a compressed RESULT entry after — so sessions from different tools
+    (Claude, GLM, Fable, Lovable, etc.) can pick up where the last one left
+    off without shared memory.
+  - history.txt: added a pointer note at the top directing readers to
+    AGENTS.md.
+Root cause: n/a (process/tooling change, not a bug fix).
+Verified how: manual review of file content; not a code change, no syntax
+  check needed.
+Follow-ups / known gaps: earlier entries in this file predate the
+  PLAN/RESULT format and remain in narrative style — left as-is per the
+  append-only rule in AGENTS.md; only new entries need to follow the format.
