@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Content-Security-Policy" content="__CSP__" />
+<title>CodeSage — Create Project</title>
+<style>
+  :root {
+    --bg: var(--vscode-editor-background, #1e1e1e);
+    --fg: var(--vscode-editor-foreground, #ddd);
+    --muted: var(--vscode-descriptionForeground, #888);
+    --accent: var(--vscode-button-background, #0e639c);
+    --accent-hover: var(--vscode-button-hoverBackground, #1177bb);
+    --border: var(--vscode-panel-border, #444);
+    --input-bg: var(--vscode-input-background, #313131);
+    --input-fg: var(--vscode-input-foreground, #ddd);
+    --error: var(--vscode-errorForeground, #f14c4c);
+    --success: #4ec9b0;
+    --warn: #dcdcaa;
+    --chip: rgba(255,255,255,0.06);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--vscode-font-family, system-ui, sans-serif);
+    font-size: 13px;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg);
+  }
+  header .logo {
+    width: 24px; height: 24px;
+    background: var(--accent);
+    border-radius: 6px;
+    display: grid; place-items: center;
+    color: white; font-weight: 700;
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 20px 80px;
+  }
+
+  .step {
+    margin-bottom: 28px;
+    animation: fade .2s ease-out;
+  }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .step-num {
+    display: inline-block;
+    width: 20px; height: 20px;
+    line-height: 20px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 8px;
+  }
+  .step-title {
+    font-size: 14px; font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .step-desc { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+
+  .options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .option {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    cursor: pointer;
+    background: var(--chip);
+    transition: all .15s;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .option:hover {
+    border-color: var(--accent);
+    background: rgba(255,255,255,0.04);
+  }
+  .option.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent) inset;
+  }
+  .option .name { font-weight: 600; }
+  .option .desc { font-size: 11px; color: var(--muted); }
+
+  textarea, input[type="text"] {
+    width: 100%;
+    background: var(--input-bg);
+    color: var(--input-fg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 13px;
+    resize: vertical;
+  }
+  textarea { min-height: 100px; }
+  input[type="text"]:focus, textarea:focus {
+    outline: 1px solid var(--accent);
+    border-color: var(--accent);
+  }
+
+  .row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .row label { min-width: 140px; color: var(--muted); }
+
+  .btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background .15s;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--fg);
+  }
+  .btn.secondary:hover { border-color: var(--accent); }
+
+  footer {
+    position: sticky; bottom: 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex; gap: 10px; align-items: center;
+  }
+  footer .status { color: var(--muted); font-size: 12px; flex: 1; }
+
+  .progress-list {
+    list-style: none; padding: 0; margin: 0;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 12px;
+  }
+  .progress-list li {
+    padding: 4px 0;
+    display: flex; gap: 8px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .progress-list .stage { color: var(--accent); min-width: 90px; }
+  .progress-list .msg { flex: 1; }
+  .progress-list .time { color: var(--muted); font-size: 11px; }
+  .progress-list .ok { color: var(--success); }
+  .progress-list .err { color: var(--error); }
+
+  .results {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    background: var(--chip);
+  }
+  .results h2 { margin: 0 0 12px; font-size: 14px; }
+  .result-row { display: flex; gap: 10px; padding: 6px 0; align-items: center; }
+  .result-row .k { color: var(--muted); min-width: 120px; }
+  .result-row .v { flex: 1; word-break: break-all; }
+  .result-row a { color: var(--accent); text-decoration: none; }
+  .result-row a:hover { text-decoration: underline; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge.ok { background: rgba(78,201,176,0.15); color: var(--success); }
+  .badge.fail { background: rgba(241,76,76,0.15); color: var(--error); }
+  .badge.pending { background: rgba(220,220,170,0.15); color: var(--warn); }
+
+  .token-box {
+    background: rgba(220,220,170,0.06);
+    border: 1px solid var(--warn);
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  .token-box h3 { margin: 0 0 6px; font-size: 13px; color: var(--warn); }
+  .token-box p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+
+  .hidden { display: none !important; }
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid var(--muted);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .llm-box {
+    background: rgba(78,201,176,0.06);
+    border: 1px solid var(--success);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  .llm-box .k { color: var(--muted); }
+
+  /* Appetize live-preview embed + inline form */
+  .appetize-box {
+    border: 1px solid var(--success);
+    border-radius: 6px;
+    padding: 14px;
+    margin: 8px 0 12px;
+    background: rgba(78,201,176,0.06);
+  }
+  .appetize-box h3 { margin: 0 0 8px; font-size: 13px; color: var(--success); }
+  .appetize-box p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  .appetize-iframe-wrap {
+    position: relative;
+    width: 100%;
+    height: 0;
+    padding-bottom: 178%; /* 9:16 portrait phone aspect ratio */
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+    margin-top: 8px;
+  }
+  .appetize-iframe-wrap iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+  .appetize-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .appetize-form input {
+    flex: 1;
+    background: var(--input-bg);
+    color: var(--input-fg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 12px;
+  }
+  .appetize-form input:focus {
+    outline: 1px solid var(--accent);
+    border-color: var(--accent);
+  }
+  .appetize-note {
+    color: var(--warn);
+    font-size: 11px;
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+  .appetize-link-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .appetize-link-row .try-it-live {
+    background: var(--success);
+    color: #1e1e1e;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .appetize-link-row .try-it-live:hover { opacity: 0.9; }
+  .appetize-link-row .manage-link { color: var(--muted); font-size: 11px; }
+
+  /* Settings modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 640px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-header h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .modal-header .close-x {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .modal-header .close-x:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+  .modal-body { padding: 18px; }
+  .modal-section {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 14px;
+    background: var(--chip);
+  }
+  .modal-section h3 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .modal-section .section-desc {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 0 0 12px;
+  }
+  .modal-section .status-line {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+  .modal-section .status-line .badge {
+    font-size: 10px;
+  }
+  .modal-section select,
+  .modal-section input[type="text"],
+  .modal-section input[type="password"] {
+    width: 100%;
+    background: var(--input-bg);
+    color: var(--input-fg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  .modal-section select:focus,
+  .modal-section input:focus {
+    outline: 1px solid var(--accent);
+    border-color: var(--accent);
+  }
+  .modal-section .form-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .modal-section .form-row label {
+    min-width: 100px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .modal-section .form-row input,
+  .modal-section .form-row select {
+    flex: 1;
+    margin-bottom: 0;
+  }
+  .modal-section .form-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .modal-section .form-actions .spacer { flex: 1; }
+  .modal-section .saved-flash {
+    color: var(--success);
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .modal-section .saved-flash.show { opacity: 1; }
+  #testEmbedUrlFlash {
+    color: var(--success);
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  #testEmbedUrlFlash.show { opacity: 1; }
+  .modal-section .err-flash {
+    color: var(--error);
+    font-size: 11px;
+  }
+  .modal-section .link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 11px;
+  }
+  .modal-section .link:hover { text-decoration: underline; }
+  .modal-section .default-model-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 4px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .modal-section .default-model-btn:hover { color: var(--fg); border-color: var(--accent); }
+
+  /* Settings gear in the header */
+  .gear-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    text-decoration: none;
+    margin-left: 6px;
+  }
+  .gear-btn:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+
+  /* Tab navigation */
+  .tab-nav {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 10px 8px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--fg); background: rgba(255,255,255,0.03); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-pane { display: none; flex: 1; overflow-y: auto; }
+  .tab-pane.active { display: flex; flex-direction: column; }
+
+  /* Projects list */
+  .project-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    background: var(--chip);
+    transition: all 0.15s;
+  }
+  .project-item:hover { border-color: var(--accent); }
+  .project-item.active { border-color: var(--success); box-shadow: 0 0 0 1px var(--success) inset; }
+  .project-item .name { font-weight: 600; font-size: 13px; }
+  .project-item .lang { color: var(--muted); font-size: 11px; margin-left: auto; }
+  .project-item .badge { font-size: 10px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">CS</div>
+    <h1>Project Space</h1>
+    <button class="gear-btn" id="settingsGearBtn" title="Settings: GitHub token, Appetize key, GitHub MCP">⚙</button>
+  </header>
+
+  <!-- Tab navigation -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="create">Create Project</button>
+    <button class="tab-btn" data-tab="projects">Projects</button>
+    <button class="tab-btn" data-tab="test">Test</button>
+  </nav>
+
+  <!-- Tab 1: Create Project -->
+  <main id="tab-create" class="tab-pane active">
+  <main id="main">
+
+    <!-- Token prompt (shown if no token yet) -->
+    <div id="tokenPrompt" class="hidden">
+      <div class="token-box">
+        <h3>GitHub token required</h3>
+        <p id="tokenPromptMsg"></p>
+        <div class="row">
+          <label>Personal Access Token</label>
+          <input type="text" id="tokenInput" placeholder="ghp_xxx or github_pat_xxx" autocomplete="off" />
+        </div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="btn" id="saveTokenBtn">Save token</button>
+          <button class="btn secondary" id="cancelTokenBtn">Cancel</button>
+        </div>
+        <p style="font-size:11px; margin-top:8px; color:var(--muted);">
+          Need a token? Visit
+          <a href="#" data-url="https://github.com/settings/tokens/new?scopes=repo,workflow&description=CodeSage%20Create%20Project">github.com/settings/tokens/new</a>
+          — select scopes <code>repo</code> and <code>workflow</code>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Resume banner (shown if a previous run was interrupted) -->
+    <div id="resumeBanner" class="hidden" style="background: rgba(220,220,170,0.08); border: 1px solid var(--warn); border-radius: 6px; padding: 14px; margin-bottom: 16px;">
+      <h3 style="margin: 0 0 6px; font-size: 13px; color: var(--warn);">Resume previous run</h3>
+      <p id="resumeBannerText" style="margin: 0 0 10px; color: var(--muted); font-size: 12px;"></p>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="resumeBtn">Resume from where it left off</button>
+        <button class="btn secondary" id="discardResumeBtn">Discard and start fresh</button>
+      </div>
+    </div>
+
+    <!-- Step 1: project type -->
+    <div class="step" id="step1">
+      <div class="step-title"><span class="step-num">1</span>Project type</div>
+      <div class="step-desc">What kind of app do you want to build?</div>
+      <div class="options" id="projectTypeOptions">
+        <div class="option" data-value="Mobile App"><div class="name">Mobile App</div><div class="desc">Android / iOS / cross-platform</div></div>
+        <div class="option" data-value="Desktop App"><div class="name">Desktop App</div><div class="desc">Windows / macOS / Linux</div></div>
+        <div class="option selected" data-value="Website"><div class="name">Website</div><div class="desc">Browser-based SPA</div></div>
+      </div>
+    </div>
+
+    <!-- Step 2: platform -->
+    <div class="step hidden" id="step2">
+      <div class="step-title"><span class="step-num">2</span>Platform</div>
+      <div class="step-desc">Where should it run?</div>
+      <div class="options" id="platformOptions"></div>
+    </div>
+
+    <!-- Step 3: framework -->
+    <div class="step hidden" id="step3">
+      <div class="step-title"><span class="step-num">3</span>Framework</div>
+      <div class="step-desc">Pick a tech stack.</div>
+      <div class="options" id="frameworkOptions"></div>
+    </div>
+
+    <!-- Step 4: scaffold is automatic -->
+    <div class="step hidden" id="step4">
+      <div class="step-title"><span class="step-num">4</span>Scaffold</div>
+      <div class="step-desc">Automatic — no input needed. CodeSage will push the framework skeleton to GitHub in a single commit.</div>
+    </div>
+
+    <!-- Step 5: repo name + description -->
+    <div class="step hidden" id="step5">
+      <div class="step-title"><span class="step-num">5</span>Project details</div>
+      <div class="step-desc">This info gets saved as <code>codesage-project.txt</code> in the repo so the AI knows what kind of project it is when you select it later.</div>
+      <div class="row">
+        <label>Repository name</label>
+        <input type="text" id="repoName" placeholder="my-codesage-app" />
+      </div>
+      <div class="row" style="align-items: flex-start; margin-bottom: 4px;">
+        <label>About this app</label>
+      </div>
+      <textarea id="projectDescription" placeholder="Example: A todo app. Add items via text input + Enter. Mark done by clicking. Delete with an X button. Clean minimal style." style="min-height: 80px;"></textarea>
+    </div>
+
+    <!-- Progress / results -->
+    <div class="step hidden" id="progressStep">
+      <div class="step-title"><span class="step-num">▶</span>Build progress</div>
+      <ul class="progress-list" id="progressList"></ul>
+    </div>
+
+    <div class="step hidden" id="resultsStep">
+      <div class="results" id="resultsBox"></div>
+    </div>
+
+  </main><!-- /#main -->
+
+  <footer>
+    <div class="status" id="footerStatus">Ready.</div>
+    <button class="btn secondary" id="backBtn">Back</button>
+    <button class="btn" id="nextBtn">Next</button>
+    <button class="btn hidden" id="createBtn">Create project</button>
+    <button class="btn hidden" id="resumeFromFatalBtn">Resume from where it left off</button>
+    <button class="btn secondary hidden" id="restartBtn">Start over</button>
+  </footer>
+  </main><!-- /#tab-create -->
+
+  <!-- Tab 2: Projects -->
+  <main id="tab-projects" class="tab-pane">
+    <div id="projectsList" style="padding: 16px 20px;">
+      <p style="color: var(--muted); text-align: center; padding: 40px 0;">Loading your GitHub repos…</p>
+    </div>
+    <div id="projectsActive" style="padding: 0 20px 16px; border-top: 1px solid var(--border); margin-top: 8px;">
+      <p style="color: var(--muted); font-size: 12px; margin-top: 12px;" id="activeProjectInfo">No active project.</p>
+    </div>
+  </main>
+
+  <!-- Tab 3: Test -->
+  <main id="tab-test" class="tab-pane">
+    <div style="padding: 16px 20px;">
+      <!-- Platform selector -->
+      <div class="form-row" style="margin-bottom: 16px; align-items: center;">
+        <label style="min-width: 120px; color: var(--muted); font-size: 12px;">Test platform</label>
+        <select id="testPlatformSelect" style="flex:1; background: var(--input-bg); color: var(--input-fg); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-size: 12px;">
+          <option value="appetize">Appetize.io (Android emulator)</option>
+          <option value="pages">GitHub Pages (web preview)</option>
+          <option value="download">Download artifact</option>
+        </select>
+      </div>
+
+      <!-- Active project info -->
+      <div id="testActiveProject" style="margin-bottom: 16px; padding: 10px 12px; background: var(--chip); border-radius: 6px; border: 1px solid var(--border);">
+        <p style="color: var(--muted); font-size: 12px; margin: 0;" id="testProjectInfo">No active project. Select one in the Projects tab.</p>
+      </div>
+
+      <!-- Build artifacts list -->
+      <div id="testBuildsList">
+        <p style="color: var(--muted); text-align: center; padding: 40px 0;">Switch to this tab after selecting a project to see available builds.</p>
+      </div>
+
+      <!-- Appetize test-launch result area. No iFrame here: Appetize gates
+           iFrame embedding behind a paid plan, so instead we open the
+           app's direct appetize.io link in the system browser and show
+           the same link as a copyable fallback in case the auto-open
+           didn't go through (e.g. blocked by OS/browser popup rules). -->
+      <div id="testEmbedArea" class="hidden" style="margin-top: 16px;">
+        <h3 style="font-size: 13px; margin: 0 0 8px;">Live Preview</h3>
+        <div class="appetize-link-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+          <a class="try-it-live" href="#" id="testOpenExternalBtn">Open in browser ↗</a>
+          <div style="display: flex; align-items: center; gap: 6px; width: 100%;">
+            <input id="testEmbedUrlFallback" type="text" readonly
+              style="flex: 1; background: var(--input-bg); color: var(--input-fg); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font-size: 11px;" />
+            <button class="btn secondary" id="testEmbedUrlCopyBtn" style="font-size: 11px; white-space: nowrap;">Copy link</button>
+          </div>
+          <span class="saved-flash" id="testEmbedUrlFlash"></span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<!-- Settings modal -->
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Create Project — settings</h2>
+      <button class="close-x" id="settingsCloseBtn" title="Close">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- GitHub token section -->
+      <div class="modal-section">
+        <h3>GitHub token</h3>
+        <p class="section-desc">Needs ONLY <code>repo</code> + <code>workflow</code> scopes. Do NOT check all permissions — that's a security risk. For fine-grained PATs, grant account-level <em>Administration: Read</em> + <em>Contents: Read and write</em> + <em>Workflows: Read and write</em>.</p>
+        <div class="status-line">
+          <span class="badge pending" id="ghTokenStatusBadge">checking…</span>
+          <span id="ghTokenStatusText" style="color: var(--muted);"></span>
+        </div>
+        <div class="form-row">
+          <label>New token</label>
+          <input type="password" id="ghTokenInput" placeholder="Paste a new GitHub PAT to replace the stored one" autocomplete="off" />
+        </div>
+        <div class="form-actions">
+          <button class="btn" id="ghTokenSaveBtn">Update token</button>
+          <button class="btn secondary" id="ghTokenClearBtn">Clear stored token</button>
+          <span class="spacer"></span>
+          <span class="saved-flash" id="ghTokenFlash"></span>
+        </div>
+        <p style="font-size:11px; margin-top:8px; color:var(--muted);">
+          Get one at
+          <a href="#" data-url="https://github.com/settings/tokens/new?scopes=repo,workflow&description=CodeSage%20Create%20Project">github.com/settings/tokens/new</a>
+          (classic) or
+          <a href="#" data-url="https://github.com/settings/personal-access-tokens/new">github.com/settings/personal-access-tokens/new</a>
+          (fine-grained).
+        </p>
+      </div>
+
+      <!-- Appetize API key section -->
+      <div class="modal-section">
+        <h3>Appetize.io API key</h3>
+        <p class="section-desc">Stored locally + pushable to GitHub repos as a secret so the workflow uploads APKs to Appetize automatically — no large downloads on your machine.</p>
+        <div class="status-line">
+          <span class="badge pending" id="appetizeKeyStatusBadge">checking…</span>
+          <span id="appetizeKeyStatusText" style="color: var(--muted);"></span>
+        </div>
+        <div class="form-row">
+          <label>New key</label>
+          <input type="password" id="appetizeKeyInputModal" placeholder="Paste a new Appetize API token to replace the stored one" autocomplete="off" />
+        </div>
+        <div class="form-actions">
+          <button class="btn" id="appetizeKeySaveBtn">Update key</button>
+          <button class="btn secondary" id="appetizeKeyClearBtn">Clear stored key</button>
+          <button class="btn" id="appetizePushSecretBtn" title="Opens your GitHub repo's Actions secrets page so you can add APPETIZE_API_KEY manually">Add on GitHub</button>
+          <span class="spacer"></span>
+          <span class="saved-flash" id="appetizeKeyFlash"></span>
+        </div>
+        <p style="font-size:11px; margin-top:8px; color:var(--muted);">
+          Get one at <a href="#" data-url="https://appetize.io/settings">appetize.io/settings</a>. Click "Add on GitHub" to open your repo's secrets page. Add a new secret: Name = <code>APPETIZE_API_KEY</code>, Value = your Appetize token.
+        </p>
+      </div>
+
+      <!-- GitHub MCP auto-config — writes the MCP server config with the
+           stored GitHub token so the AI can use GitHub MCP tools (get_file,
+           create_or_update_file, etc.) without the OAuth incompatibility. -->
+      <div class="modal-section">
+        <h3>GitHub MCP server</h3>
+        <p class="section-desc">Configures the GitHub MCP server (from the marketplace) to use your stored GitHub token instead of OAuth. This fixes the "incompatible auth server: does not support dynamic client registration" error. The AI can then read/edit files on GitHub directly via MCP tools.</p>
+        <div class="status-line">
+          <span class="badge pending" id="githubMcpStatusBadge">checking…</span>
+          <span id="githubMcpStatusText" style="color: var(--muted);"></span>
+        </div>
+        <div class="form-actions">
+          <button class="btn" id="configureGithubMcpBtn">Auto-configure GitHub MCP</button>
+          <button class="btn secondary" id="removeGithubMcpBtn">Remove GitHub MCP config</button>
+          <span class="spacer"></span>
+          <span class="saved-flash" id="githubMcpFlash"></span>
+        </div>
+        <p style="font-size:11px; margin-top:8px; color:var(--muted);">
+          After configuring, reload the VS Code window (Ctrl/Cmd+Shift+P → "Developer: Reload Window") for the MCP server to pick up the new config.
+        </p>
+      </div>
+
+      <!-- LLM section removed in 3.1.0 — the wizard no longer manages LLM
+           config. All AI development happens in CodeSage's normal chat,
+           which has its own settings panel for provider/model/keys. -->
+
+    </div>
+  </div>
+</div>
+
+<script nonce="__NONCE__">
+"use strict";
+
+// ---- State ---------------------------------------------------------------
+const state = {
+  hasToken: false,
+  hasAppetizeKey: false,
+  choices: {
+    projectType: "Website",
+    platform: null,
+    framework: null,
+  },
+  currentStep: 1,
+  building: false,
+  lastResult: null,
+};
+
+// ---- Config (matches FRAMEWORKS in host.js, kept in sync manually) -------
+// React (Website) and Flutter (Android) are implemented end-to-end. Other
+// entries are listed so the wizard UI shows them but they will warn the user
+// that they are stubs.
+const FRAMEWORK_OPTIONS = {
+  Website: [
+    { id: "react", name: "React", desc: "Vite + TypeScript, GitHub Pages deploy", supported: true },
+    { id: "next", name: "Next.js", desc: "Static export, GitHub Pages", supported: true },
+    { id: "vue", name: "Vue", desc: "Vite + Vue 3, GitHub Pages", supported: true },
+  ],
+  "Mobile App": [
+    { id: "flutter", name: "Flutter", desc: "Android APK, Appetize preview", supported: true },
+    { id: "kotlin", name: "Kotlin + Java", desc: "Native Android, Gradle", supported: true },
+    { id: "react-native", name: "React Native", desc: "Expo prebuild + Android APK", supported: true },
+    { id: "kivy", name: "Kivy (Python)", desc: "Android via Buildozer", supported: true },
+  ],
+  "Desktop App": [
+    { id: "electron", name: "Electron", desc: "Cross-platform, AppImage artifact", supported: true },
+    { id: "tauri", name: "Tauri", desc: "Rust + webview, AppImage artifact", supported: true },
+  ],
+};
+
+const PLATFORM_OPTIONS = {
+  "Website": [{ id: "Web", name: "Web", desc: "Any modern browser" }],
+  "Mobile App": [
+    { id: "Android", name: "Android", desc: "Google Play / APK" },
+    { id: "iOS", name: "iOS", desc: "App Store" },
+    { id: "Cross-platform", name: "Cross-platform", desc: "Android + iOS from one codebase" },
+  ],
+  "Desktop App": [
+    { id: "Cross-platform", name: "Cross-platform", desc: "Windows + macOS + Linux" },
+  ],
+};
+
+// ---- DOM helpers ---------------------------------------------------------
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+function setHTML(el, html) { el.innerHTML = html; }
+function show(el) { el.classList.remove("hidden"); }
+function hide(el) { el.classList.add("hidden"); }
+
+function footer(msg) { $("#footerStatus").textContent = msg; }
+
+// ---- VS Code messaging ---------------------------------------------------
+const vscode = acquireVsCodeApi();
+function send(msg) { vscode.postMessage(msg); }
+
+window.addEventListener("message", (ev) => {
+  const msg = ev.data;
+  if (!msg || !msg.type) return;
+  handleMessage(msg);
+});
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case "state":
+      state.hasToken = msg.hasToken;
+      state.hasAppetizeKey = msg.hasAppetizeKey;
+      if (isSettingsModalOpen()) refreshModalStatusBadges();
+      break;
+    case "needToken":
+      showTokenPrompt(msg.message);
+      break;
+    case "tokenSet":
+      if (msg.ok) {
+        state.hasToken = true;
+        hide($("#tokenPrompt"));
+        footer("Token saved. Resuming…");
+        // If user had already clicked Create, resume
+        if (state._pendingCreate) {
+          const pending = state._pendingCreate;
+          state._pendingCreate = null;
+          doCreate(pending);
+        }
+      } else {
+        footer("Token save failed: " + (msg.error || "unknown"));
+      }
+      break;
+    case "tokenCleared":
+      state.hasToken = false;
+      footer("Token cleared.");
+      if (isSettingsModalOpen()) refreshModalStatusBadges();
+      break;
+    case "progress":
+      appendProgress(msg);
+      break;
+    case "partial":
+      showPartial(msg);
+      break;
+    case "fatal":
+      appendFatal(msg.message, msg.resumeable);
+      break;
+    case "done":
+      showResults(msg);
+      break;
+    case "appetizeReady":
+      onAppetizeReady(msg);
+      break;
+    case "appetizeFailed":
+      onAppetizeFailed(msg);
+      break;
+    case "appetizeKeySet":
+      // Used by the inline "set key" flow in the results panel. The actual
+      // upload is triggered separately via `enableAppetize` so we don't act
+      // on this beyond updating state.
+      if (msg.ok) state.hasAppetizeKey = true;
+      if (isSettingsModalOpen()) refreshModalStatusBadges();
+      break;
+    case "appetizeKeyCleared":
+      if (msg.ok) state.hasAppetizeKey = false;
+      else flashModal("appetizeKeyFlash", "Failed: " + (msg.error || "unknown"), false);
+      if (isSettingsModalOpen()) refreshModalStatusBadges();
+      break;
+    case "appetizeSecretPushed":
+      if (msg.ok) {
+        flashModal("appetizeKeyFlash", "Pushed to " + (msg.count || 0) + " of " + (msg.total || "?") + " repos." + (msg.failed > 0 ? " (" + msg.failed + " failed)" : ""), true);
+      } else {
+        flashModal("appetizeKeyFlash", msg.error || ("Pushed to " + (msg.count || 0) + " of " + (msg.total || "?") + " repos." + (msg.failedRepos ? " Failed: " + msg.failedRepos.join("; ") : "")), false);
+      }
+      break;
+    case "resumable":
+      handleResumableMsg(msg);
+      break;
+    case "runForgotten":
+      // State cleared — hide the resume banner if visible
+      hide($("#resumeBanner"));
+      footer("Previous run discarded.");
+      break;
+    case "githubMcpStatus":
+      handleGithubMcpStatus(msg);
+      break;
+    case "githubMcpConfigured":
+      if (msg.ok) {
+        flashModal("githubMcpFlash", "Configured! Reload the window to activate.", true);
+        send({ type: "getGithubMcpStatus" });
+      } else {
+        flashModal("githubMcpFlash", "Failed: " + (msg.error || "unknown"), false);
+      }
+      break;
+    case "githubMcpRemoved":
+      if (msg.ok) {
+        flashModal("githubMcpFlash", "Removed.", true);
+        send({ type: "getGithubMcpStatus" });
+      } else {
+        flashModal("githubMcpFlash", "Failed: " + (msg.error || "unknown"), false);
+      }
+      break;
+    case "projectsList":
+      renderProjectsList(msg);
+      break;
+    case "projectSelected":
+      if (msg.ok) {
+        renderProjectsList(msg); // re-render with new active status
+        updateActiveProjectInfo(msg.project);
+      } else {
+        footer("Failed: " + (msg.error || "unknown"));
+      }
+      break;
+    case "testBuilds":
+      renderTestBuilds(msg);
+      break;
+    case "testLaunchResult":
+      handleTestLaunchResult(msg);
+      break;
+  }
+}
+
+function renderProjectsList(msg) {
+  const list = $("#projectsList");
+  if (!list) return;
+  if (msg.error) {
+    list.innerHTML = `<p style="color: var(--error); text-align: center; padding: 40px 0;">${escapeHtml(msg.error)}</p>`;
+    return;
+  }
+  if (!msg.repos || msg.repos.length === 0) {
+    list.innerHTML = '<p style="color: var(--muted); text-align: center; padding: 40px 0;">No repos found. Create one in the Create Project tab.</p>';
+    return;
+  }
+  const active = msg.active || null;
+  const html = msg.repos.map((r) => {
+    const isActive = active && active.owner === r.owner && active.repo === r.name;
+    return `
+      <div class="project-item ${isActive ? "active" : ""}" data-owner="${escapeAttr(r.owner)}" data-repo="${escapeAttr(r.name)}" data-url="${escapeAttr(r.url)}">
+        <span class="name">${escapeHtml(r.owner)}/${escapeHtml(r.name)}</span>
+        ${isActive ? '<span class="badge ok">active</span>' : ""}
+        <span class="lang">${escapeHtml(r.language || "")}</span>
+      </div>
+    `;
+  }).join("");
+  list.innerHTML = html;
+  // Wire up click handlers
+  $$(".project-item").forEach((el) => {
+    el.onclick = () => {
+      send({
+        type: "selectProject",
+        owner: el.dataset.owner,
+        repo: el.dataset.repo,
+        url: el.dataset.url,
+      });
+    };
+  });
+  // Update active info
+  if (active) {
+    updateActiveProjectInfo(active);
+  } else {
+    $("#activeProjectInfo").textContent = "No active project. Click a repo to set it as active.";
+  }
+}
+
+function updateActiveProjectInfo(project) {
+  const el = $("#activeProjectInfo");
+  if (!el || !project) return;
+  el.innerHTML = `Active project: <strong>${escapeHtml(project.owner)}/${escapeHtml(project.repo)}</strong>. The AI will work on this repo via GitHub MCP.`;
+  // Also update the Test tab's project info
+  const testInfo = $("#testProjectInfo");
+  if (testInfo) {
+    testInfo.innerHTML = `Active project: <strong>${escapeHtml(project.owner)}/${escapeHtml(project.repo)}</strong>`;
+  }
+}
+
+// ---- Test tab ------------------------------------------------------------
+
+function loadTestTab() {
+  const active = state.lastResult; // not reliable — better to ask host
+  send({ type: "getTestBuilds" });
+}
+
+function renderTestBuilds(msg) {
+  const list = $("#testBuildsList");
+  if (!list) return;
+  const info = $("#testProjectInfo");
+
+  if (msg.error) {
+    list.innerHTML = `<p style="color: var(--error); padding: 20px 0;">${escapeHtml(msg.error)}</p>`;
+    return;
+  }
+  if (msg.project) {
+    info.innerHTML = `Active project: <strong>${escapeHtml(msg.project.owner)}/${escapeHtml(msg.project.repo)}</strong> (${escapeHtml(msg.projectType || "Unknown")})`;
+  } else {
+    info.textContent = "No active project. Select one in the Projects tab.";
+    list.innerHTML = '<p style="color: var(--muted); text-align: center; padding: 40px 0;">No active project.</p>';
+    return;
+  }
+
+  if (!msg.builds || msg.builds.length === 0) {
+    list.innerHTML = '<p style="color: var(--muted); text-align: center; padding: 40px 0;">No builds found. Push code changes to trigger a build, then come back.</p>';
+    return;
+  }
+
+  // Render each build as a card
+  const html = msg.builds.map((b) => {
+    const date = new Date(b.createdAt).toLocaleString();
+    const sizeStr = b.artifactSize ? formatBytes(b.artifactSize) : "?";
+    const isFlutter = (msg.projectType || "").toLowerCase().includes("flutter");
+    return `
+      <div class="project-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="badge ${b.status === "success" ? "ok" : b.status === "failure" ? "fail" : "pending"}">${escapeHtml(b.status)}</span>
+          <span class="name" style="font-size: 13px;">Build #${escapeHtml(String(b.runNumber))}</span>
+          <span class="lang">${escapeHtml(date)}</span>
+        </div>
+        <div style="display: flex; gap: 12px; font-size: 11px; color: var(--muted);">
+          <span>Artifact: ${escapeHtml(b.artifactName || "N/A")}</span>
+          <span>Size: ${sizeStr}</span>
+          ${b.version ? `<span>Version: ${escapeHtml(b.version)}</span>` : ""}
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 4px;">
+          ${isFlutter && b.status === "success" && b.artifactName ? `<button class="btn test-build-btn" data-run-id="${escapeAttr(String(b.runId))}" data-artifact-url="${escapeAttr(b.artifactUrl || "")}" data-artifact-size="${b.artifactSize || 0}">Test on Appetize</button>` : ""}
+          ${!isFlutter && b.status === "success" && msg.pagesUrl ? `<button class="btn test-pages-btn" data-url="${escapeAttr(msg.pagesUrl)}">Open live site</button>` : ""}
+          <a href="#" data-url="${escapeAttr(b.runUrl)}" style="color: var(--accent); font-size: 11px; text-decoration: none; align-self: center;">View run ↗</a>
+        </div>
+      </div>
+    `;
+  }).join("");
+  list.innerHTML = html;
+
+  // Wire up Test buttons
+  $$(".test-build-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const platform = $("#testPlatformSelect").value;
+      btn.disabled = true;
+      btn.textContent = "Launching…";
+      send({
+        type: "launchTest",
+        platform,
+        artifactUrl: btn.dataset.artifactUrl,
+        artifactSize: parseInt(btn.dataset.artifactSize, 10) || 0,
+        runId: btn.dataset.runId,
+      });
+    };
+  });
+  $$(".test-pages-btn").forEach((btn) => {
+    btn.onclick = () => {
+      send({ type: "openExternal", url: btn.dataset.url });
+    };
+  });
+}
+
+function handleTestLaunchResult(msg) {
+  // Re-enable buttons
+  $$(".test-build-btn").forEach((btn) => { btn.disabled = false; btn.textContent = "Test on Appetize"; });
+
+  // Get or create a status message area right above the embed
+  let statusEl = $("#testStatusMsg");
+  if (!statusEl) {
+    statusEl = document.createElement("div");
+    statusEl.id = "testStatusMsg";
+    statusEl.style.cssText = "padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; display: none;";
+    const list = $("#testBuildsList");
+    if (list && list.parentNode) {
+      list.parentNode.insertBefore(statusEl, list.nextSibling);
+    }
+  }
+
+  if (msg.error) {
+    statusEl.style.display = "block";
+    statusEl.style.background = "rgba(241,76,76,0.1)";
+    statusEl.style.border = "1px solid var(--error)";
+    statusEl.style.color = "var(--error)";
+    statusEl.innerHTML = `<strong>Failed to launch</strong><br>${escapeHtml(msg.error)}`;
+    $("#testEmbedArea").classList.add("hidden");
+    footer("Test launch failed.");
+    return;
+  }
+
+  if (msg.embedUrl || msg.manageUrl) {
+    // Prefer the direct appetize.io app link (manageUrl) over the /embed/
+    // link: it's the one that isn't gated behind Appetize's paid embed
+    // feature, since it's Appetize's own hosted page rather than an
+    // iframe-embeddable one. Fall back to embedUrl only if the host didn't
+    // send a manageUrl for some reason.
+    const openUrl = msg.manageUrl || msg.embedUrl;
+
+    statusEl.style.display = "block";
+    statusEl.style.background = "rgba(78,201,176,0.1)";
+    statusEl.style.border = "1px solid var(--success)";
+    statusEl.style.color = "var(--success)";
+    statusEl.innerHTML = `<strong>App launched</strong><br>Opening it in your browser now. If a new window/tab didn't open, use the link below.`;
+
+    $("#testEmbedUrlFallback").value = openUrl;
+    $("#testOpenExternalBtn").dataset.url = openUrl;
+    $("#testEmbedArea").classList.remove("hidden");
+
+    // Auto-open in the system browser right away.
+    send({ type: "openExternal", url: openUrl });
+
+    footer("App launched on Appetize.io — opened in browser.");
+  } else if (msg.pagesUrl) {
+    send({ type: "openExternal", url: msg.pagesUrl });
+    statusEl.style.display = "block";
+    statusEl.style.background = "rgba(78,201,176,0.1)";
+    statusEl.style.border = "1px solid var(--success)";
+    statusEl.style.color = "var(--success)";
+    statusEl.innerHTML = `<strong>Live site opened</strong><br>${escapeHtml(msg.pagesUrl)}`;
+    footer("Live site opened in browser.");
+  } else {
+    statusEl.style.display = "block";
+    statusEl.style.background = "rgba(220,220,170,0.1)";
+    statusEl.style.border = "1px solid var(--warn)";
+    statusEl.style.color = "var(--warn)";
+    statusEl.innerHTML = `<strong>Unexpected response</strong><br>No embed URL or error received.`;
+  }
+}
+
+function handleGithubMcpStatus(msg) {
+  const badge = $("#githubMcpStatusBadge");
+  const text = $("#githubMcpStatusText");
+  if (msg.configured) {
+    badge.textContent = "configured";
+    badge.className = "badge ok";
+    text.textContent = msg.details || "GitHub MCP server is configured.";
+  } else if (msg.missingToken) {
+    badge.textContent = "no token";
+    badge.className = "badge fail";
+    text.textContent = "No GitHub token stored. Add one in the GitHub token section above first.";
+  } else {
+    badge.textContent = "not configured";
+    badge.className = "badge pending";
+    text.textContent = msg.details || "GitHub MCP server not configured. Click the button to auto-configure.";
+  }
+}
+
+
+// ---- Step rendering ------------------------------------------------------
+function renderProjectType() {
+  $$("#projectTypeOptions .option").forEach((el) => {
+    el.classList.toggle("selected", el.dataset.value === state.choices.projectType);
+    el.onclick = () => {
+      state.choices.projectType = el.dataset.value;
+      state.choices.platform = null;
+      state.choices.framework = null;
+      renderProjectType();
+      renderPlatform();
+      renderFramework();
+      goToStep(state.choices.projectType ? 2 : 1);
+    };
+  });
+}
+
+function renderPlatform() {
+  const opts = PLATFORM_OPTIONS[state.choices.projectType] || [];
+  const container = $("#platformOptions");
+  container.innerHTML = opts.map((o) => `
+    <div class="option ${state.choices.platform === o.id ? "selected" : ""}" data-value="${o.id}">
+      <div class="name">${o.name}</div>
+      <div class="desc">${o.desc}</div>
+    </div>
+  `).join("");
+  $$("#platformOptions .option").forEach((el) => {
+    el.onclick = () => {
+      state.choices.platform = el.dataset.value;
+      state.choices.framework = null;
+      renderPlatform();
+      renderFramework();
+      goToStep(3);
+    };
+  });
+}
+
+function renderFramework() {
+  const opts = FRAMEWORK_OPTIONS[state.choices.projectType] || [];
+  // Filter by platform where it makes sense
+  let filtered = opts;
+  if (state.choices.projectType === "Mobile App") {
+    if (state.choices.platform === "Android") {
+      filtered = opts.filter((o) => ["flutter","kotlin","react-native","kivy"].includes(o.id));
+    } else if (state.choices.platform === "iOS") {
+      filtered = opts.filter((o) => ["flutter","react-native"].includes(o.id));
+    } else if (state.choices.platform === "Cross-platform") {
+      filtered = opts.filter((o) => ["flutter","react-native"].includes(o.id));
+    }
+  }
+  const container = $("#frameworkOptions");
+  container.innerHTML = filtered.map((o) => `
+    <div class="option ${state.choices.framework === o.id ? "selected" : ""}" data-value="${o.id}">
+      <div class="name">${o.name} ${o.supported ? "" : '<span class="badge pending" style="margin-left:6px;">stub</span>'}</div>
+      <div class="desc">${o.desc}</div>
+    </div>
+  `).join("");
+  $$("#frameworkOptions .option").forEach((el) => {
+    el.onclick = () => {
+      state.choices.framework = el.dataset.value;
+      renderFramework();
+      goToStep(5); // skip 4 (scaffold is automatic)
+    };
+  });
+}
+
+function goToStep(n) {
+  state.currentStep = n;
+  // Show steps up to n
+  const steps = [null, $("#step1"), $("#step2"), $("#step3"), $("#step4"), $("#step5")];
+  for (let i = 1; i <= 5; i++) {
+    if (i <= n) show(steps[i]);
+    else hide(steps[i]);
+  }
+  // Update footer buttons
+  const isLast = n === 5;
+  $("#nextBtn").classList.toggle("hidden", isLast);
+  $("#createBtn").classList.toggle("hidden", !isLast);
+  $("#backBtn").disabled = (n === 1);
+  if (isLast) {
+    footer("Ready to create. Click Create project to scaffold the repo.");
+  } else {
+    footer(`Step ${n} of 5.`);
+  }
+}
+
+// ---- Token prompt --------------------------------------------------------
+function showTokenPrompt(message) {
+  $("#tokenPromptMsg").textContent = message;
+  show($("#tokenPrompt"));
+  $("#tokenInput").focus();
+  footer("GitHub token required to continue.");
+}
+
+// ---- Create --------------------------------------------------------------
+function onCreate() {
+  const repoName = $("#repoName").value.trim();
+  if (!repoName) { footer("Please enter a repository name."); $("#repoName").focus(); return; }
+  const description = $("#projectDescription").value.trim();
+
+  const framework = state.choices.framework;
+  const fwDef = (FRAMEWORK_OPTIONS[state.choices.projectType] || []).find((o) => o.id === framework);
+  if (fwDef && !fwDef.supported) {
+    if (!confirm(`Framework '${framework}' is a stub in this build. Only React and Flutter are fully implemented. Continue anyway? (A scaffold will not be pushed.)`)) {
+      return;
+    }
+  }
+
+  const payload = {
+    projectType: state.choices.projectType,
+    platform: state.choices.platform,
+    framework,
+    repoName,
+    description,
+  };
+
+  if (!state.hasToken) {
+    state._pendingCreate = payload;
+    send({ type: "create", ...payload }); // host will send needToken, then we resume
+    return;
+  }
+  doCreate(payload);
+}
+
+function doCreate(payload) {
+  state.building = true;
+  hide($("#step1")); hide($("#step2")); hide($("#step3")); hide($("#step4")); hide($("#step5"));
+  show($("#progressStep"));
+  $("#progressList").innerHTML = "";
+  $("#nextBtn").classList.add("hidden");
+  $("#createBtn").classList.add("hidden");
+  $("#backBtn").classList.add("hidden");
+  footer("Building…");
+  send({ type: "create", ...payload });
+}
+
+// ---- Progress ------------------------------------------------------------
+function appendProgress(msg) {
+  const li = document.createElement("li");
+  const stage = msg.stage || "info";
+  const cls = msg.stage === "fatal" ? "err" : "ok";
+  li.innerHTML = `<span class="stage">${stage}</span><span class="msg ${cls}">${escapeHtml(msg.message)}</span><span class="time">${new Date().toLocaleTimeString()}</span>`;
+  $("#progressList").appendChild(li);
+  $("#main").scrollTop = $("#main").scrollHeight;
+  if (msg.runUrl) {
+    const li2 = document.createElement("li");
+    li2.innerHTML = `<span class="stage">link</span><span class="msg"><a href="#" data-url="${escapeAttr(msg.runUrl)}">${escapeHtml(msg.runUrl)}</a></span><span class="time">—</span>`;
+    $("#progressList").appendChild(li2);
+  }
+  footer(msg.message);
+}
+
+function appendFatal(message, resumeable) {
+  const li = document.createElement("li");
+  li.innerHTML = `<span class="stage err" style="color:var(--error);">fatal</span><span class="msg err">${escapeHtml(message)}</span><span class="time">${new Date().toLocaleTimeString()}</span>`;
+  $("#progressList").appendChild(li);
+  footer("Failed: " + message);
+  state.building = false;
+  showRestart(resumeable);
+}
+
+function showPartial(msg) {
+  const box = $("#resultsBox");
+  setHTML(box, `
+    <h2>Partial success</h2>
+    <div class="result-row"><div class="k">Repository</div><div class="v"><a href="#" data-url="${escapeAttr(msg.repoUrl)}">${escapeHtml(msg.repoUrl)}</a></div></div>
+    <p style="color:var(--muted);font-size:12px;margin-top:12px;">The scaffold and workflow were pushed, but the AI code-gen or build step did not complete. You can edit the code manually in the repo and trigger the workflow from the Actions tab, or click "Resume" to retry the failed stage.</p>
+  `);
+  show($("#resultsStep"));
+  showRestart(true);
+}
+
+function showResults(msg) {
+  state.lastResult = msg;
+
+  const box = $("#resultsBox");
+  const rows = [];
+  rows.push(`<div class="result-row"><div class="k">Status</div><div class="v"><span class="badge ok">created</span></div></div>`);
+  rows.push(`<div class="result-row"><div class="k">Repository</div><div class="v"><a href="#" data-url="${escapeAttr(msg.repoUrl)}">${escapeHtml(msg.repoUrl)}</a></div></div>`);
+  rows.push(`<div class="result-row"><div class="k">Active project</div><div class="v"><span class="badge ok">set</span> — AI will work on this repo via GitHub MCP.</div></div>`);
+  rows.push(`<div class="result-row"><div class="k">Next step</div><div class="v">Open CodeSage's chat and tell the AI what to build. It will edit files on GitHub via MCP — builds trigger automatically on push.</div></div>`);
+  setHTML(box, `<h2>Project created</h2>${rows.join("")}`);
+  show($("#resultsStep"));
+  footer("Project created. Use CodeSage's chat to start building.");
+  state.building = false;
+  showRestart();
+}
+
+/**
+ * Build the Appetize block HTML for the results panel. Three cases:
+ *   1. embed URL present  -> show iframe + "Try it live" button + manage link
+ *   2. key needed          -> show inline form to enter the API key
+ *   3. error / no APK      -> show a small note explaining why live preview
+ *                              isn't available, with a manual form fallback
+ *
+ * The APK download link is always preserved via the artifacts row in
+ * showResults — this block is purely additive.
+ */
+function renderAppetizeBlock(msg) {
+  if (msg.appetizeEmbedUrl) {
+    return `<div class="result-row"><div class="k">Live preview</div><div class="v">
+      <div class="appetize-link-row">
+        <a class="try-it-live" href="#" data-url="${escapeAttr(msg.appetizeEmbedUrl)}">▶ Try it live</a>
+        ${msg.appetizeManageUrl ? `<a class="manage-link" href="#" data-url="${escapeAttr(msg.appetizeManageUrl)}">manage on appetize.io ↗</a>` : ""}
+      </div>
+      <div class="appetize-iframe-wrap">
+        <iframe src="${escapeAttr(msg.appetizeEmbedUrl)}" allow="autoplay; fullscreen" loading="lazy"></iframe>
+      </div>
+    </div></div>`;
+  }
+
+  if (msg.appetizeKeyNeeded || msg.appetizeError) {
+    const note = msg.appetizeError
+      ? `Live preview unavailable: ${escapeHtml(msg.appetizeError)}`
+      : "Live preview needs an Appetize.io API key. Enter one below to enable it — your APK is already built.";
+    return `<div class="result-row"><div class="k">Live preview</div><div class="v">
+      <div class="appetize-box">
+        <h3>Appetize.io live preview</h3>
+        <p>${note}</p>
+        <div class="appetize-form">
+          <input type="text" id="appetizeKeyInput" placeholder="appetize.io API token (find it at appetize.io/settings)" autocomplete="off" />
+          <button class="btn" id="enableAppetizeBtn">Enable</button>
+        </div>
+        <p style="font-size:11px; margin-top:8px; color:var(--muted);">
+          Don't have one? Visit
+          <a href="#" data-url="https://appetize.io/settings">appetize.io/settings</a>
+          — the free tier covers a few uploads per month.
+        </p>
+      </div>
+    </div></div>`;
+  }
+
+  // No embed URL, no error, no key-needed flag — preview wasn't attempted
+  // (e.g. build failed). Don't render a block at all.
+  return "";
+}
+
+/**
+ * Called when host emits `appetizeReady` after the user entered a key (or on
+ * a manual retry). Replaces just the live-preview row in the results panel
+ * with the iframe, without re-rendering the rest of the panel.
+ */
+function onAppetizeReady(msg) {
+  if (!state.lastResult) return;
+  state.lastResult.appetizeEmbedUrl = msg.embedUrl;
+  state.lastResult.appetizeManageUrl = msg.manageUrl;
+  state.lastResult.appetizeError = null;
+  state.lastResult.appetizeKeyNeeded = false;
+  state.hasAppetizeKey = true;
+  // Re-render the whole results box — it's the simplest way to keep state
+  // consistent, and the user just made a meaningful interaction.
+  showResults(state.lastResult);
+  footer("Live preview ready.");
+}
+
+/**
+ * Called when host emits `appetizeFailed`. Updates the live-preview row to
+ * show the error, keeps the rest of the results panel (including APK
+ * download link) intact.
+ */
+function onAppetizeFailed(msg) {
+  if (!state.lastResult) return;
+  state.lastResult.appetizeEmbedUrl = null;
+  state.lastResult.appetizeError = msg.error || "Unknown error";
+  state.lastResult.appetizeKeyNeeded = false;
+  showResults(state.lastResult);
+  footer("Live preview failed: " + (msg.error || "unknown"));
+}
+
+function showRestart(resumeable) {
+  $("#restartBtn").classList.remove("hidden");
+  // Show the Resume button only if the fatal error marked itself resumeable
+  const resumeBtn = $("#resumeFromFatalBtn");
+  if (resumeable) {
+    resumeBtn.classList.remove("hidden");
+  } else {
+    resumeBtn.classList.add("hidden");
+  }
+}
+
+/**
+ * Handle the `resumable` message — sent on wizard load. If a previous run
+ * was interrupted, show a banner at the top offering to Resume or Discard.
+ */
+function handleResumableMsg(msg) {
+  if (!msg.resumable) {
+    hide($("#resumeBanner"));
+    return;
+  }
+  // Don't show the banner if we're mid-build or showing results
+  if (state.building) return;
+  if (state.lastResult) return; // already finished a run this session
+  const stageLabels = {
+    token: "token resolution",
+    llm: "LLM config check",
+    repo: "repo creation",
+    scaffold: "scaffold push",
+    codegen: "AI code generation",
+    dispatch: "workflow dispatch",
+    poll: "build polling",
+    artifacts: "artifact fetch",
+    preview: "live preview upload",
+  };
+  const stageLabel = stageLabels[msg.stage] || msg.stage;
+  const repoInfo = msg.repoName ? ` for <strong>${escapeHtml(msg.repoName)}</strong>` : "";
+  const req = msg.request || {};
+  const specPreview = req.repoName || "(no name)";
+  $("#resumeBannerText").innerHTML = `A previous run was interrupted at <strong>${escapeHtml(stageLabel)}</strong>${repoInfo}. Framework: ${escapeHtml(req.framework || "?")}, repo: "${escapeHtml(specPreview)}". Resume will skip completed stages and retry the failed one.`;
+  show($("#resumeBanner"));
+  // Auto-scroll so the user sees the banner
+  $("#main").scrollTop = 0;
+}
+
+function truncate(s, n) {
+  s = String(s == null ? "" : s).trim();
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+// ---- Helpers -------------------------------------------------------------
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+function formatBytes(n) {
+  if (!n) return "0 B";
+  if (n < 1024) return n + " B";
+  if (n < 1024*1024) return (n/1024).toFixed(1) + " KB";
+  return (n/1024/1024).toFixed(1) + " MB";
+}
+
+// ---- Settings modal ------------------------------------------------------
+
+function isSettingsModalOpen() {
+  return $("#settingsModal").classList.contains("open");
+}
+
+function openSettingsModal() {
+  $("#settingsModal").classList.add("open");
+  // Ask the host for fresh status of all sections
+  send({ type: "getState" });
+  send({ type: "getGithubMcpStatus" });
+}
+
+function closeSettingsModal() {
+  $("#settingsModal").classList.remove("open");
+  // Clear any input fields so secrets don't linger in the DOM
+  ["ghTokenInput", "appetizeKeyInputModal"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+}
+
+/**
+ * Render the status badges + form fields based on the latest `state`.
+ * Called from handleMessage("state") when the modal is open.
+ */
+function refreshModalStatusBadges() {
+  // GitHub token
+  const ghBadge = $("#ghTokenStatusBadge");
+  const ghText = $("#ghTokenStatusText");
+  if (state.hasToken) {
+    ghBadge.textContent = "stored";
+    ghBadge.className = "badge ok";
+    ghText.textContent = "A GitHub token is stored in SecretStorage.";
+  } else {
+    ghBadge.textContent = "missing";
+    ghBadge.className = "badge fail";
+    ghText.textContent = "No token stored — you'll be prompted when you start a build.";
+  }
+
+  // Appetize key
+  const apBadge = $("#appetizeKeyStatusBadge");
+  const apText = $("#appetizeKeyStatusText");
+  if (state.hasAppetizeKey) {
+    apBadge.textContent = "stored";
+    apBadge.className = "badge ok";
+    apText.textContent = "An Appetize API key is stored. Flutter builds will auto-upload.";
+  } else {
+    apBadge.textContent = "missing";
+    apBadge.className = "badge pending";
+    apText.textContent = "No Appetize key stored. Flutter builds will prompt you inline after the build.";
+  }
+
+  // LLM — read-only status. The badge reflects what CodeSage's own settings
+  // panel has configured. To EDIT, the user clicks "Open CodeSage settings"
+  // which opens CodeSage's real settings UI (no parallel storage here).
+}
+
+
+/**
+ * Show a brief "Saved." / "Failed: …" message next to a modal section's
+ * action buttons. Auto-hides after ~2s.
+ */
+function flashModal(elemId, text, ok) {
+  const el = document.getElementById(elemId);
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = ok ? "var(--success)" : "var(--error)";
+  el.classList.add("show");
+  clearTimeout(el._flashTimer);
+  el._flashTimer = setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+// ---- Wire up -------------------------------------------------------------
+$("#testOpenExternalBtn").onclick = () => {
+  const url = $("#testOpenExternalBtn").dataset.url;
+  if (url) send({ type: "openExternal", url });
+};
+$("#testEmbedUrlCopyBtn").onclick = () => {
+  const url = $("#testEmbedUrlFallback").value;
+  if (!url) return;
+  send({ type: "copy", text: url });
+  flashModal("testEmbedUrlFlash", "Copied!", true);
+};
+$("#saveTokenBtn").onclick = () => {
+  const t = $("#tokenInput").value.trim();
+  if (!t) { footer("Enter a token first."); return; }
+  send({ type: "setToken", token: t });
+};
+$("#cancelTokenBtn").onclick = () => {
+  hide($("#tokenPrompt"));
+  state._pendingCreate = null;
+  footer("Cancelled.");
+};
+$("#nextBtn").onclick = () => {
+  if (state.currentStep === 1 && !state.choices.projectType) { footer("Pick a project type."); return; }
+  if (state.currentStep === 2 && !state.choices.platform) { footer("Pick a platform."); return; }
+  if (state.currentStep === 3 && !state.choices.framework) { footer("Pick a framework."); return; }
+  // Skip step 4 (scaffold is automatic)
+  if (state.currentStep === 3) goToStep(5);
+  else goToStep(state.currentStep + 1);
+};
+$("#backBtn").onclick = () => {
+  if (state.currentStep === 5) goToStep(3);
+  else if (state.currentStep > 1) goToStep(state.currentStep - 1);
+};
+$("#createBtn").onclick = onCreate;
+$("#restartBtn").onclick = () => {
+  // "Start over" — clear any saved pipeline state so Resume isn't offered
+  vscode.postMessage({ type: "forgetRun" });
+  location.reload();
+};
+$("#resumeFromFatalBtn").onclick = () => {
+  // "Resume from where it left off" — shown on fatal errors
+  hide($("#resumeFromFatalBtn"));
+  hide($("#restartBtn"));
+  hide($("#resultsStep"));
+  show($("#progressStep"));
+  $("#progressList").innerHTML = "";
+  state.building = true;
+  footer("Resuming…");
+  vscode.postMessage({ type: "resumeCreate" });
+};
+$("#resumeBtn").onclick = () => {
+  // "Resume from where it left off" — shown in the top banner on load
+  hide($("#resumeBanner"));
+  hide($("#step1")); hide($("#step2")); hide($("#step3")); hide($("#step4")); hide($("#step5"));
+  show($("#progressStep"));
+  $("#progressList").innerHTML = "";
+  state.building = true;
+  footer("Resuming…");
+  vscode.postMessage({ type: "resumeCreate" });
+};
+$("#discardResumeBtn").onclick = () => {
+  // "Discard and start fresh" — clear saved state, hide banner
+  vscode.postMessage({ type: "forgetRun" });
+  hide($("#resumeBanner"));
+  footer("Previous run discarded. Ready for a new project.");
+};
+
+// ---- Settings modal wiring -----------------------------------------------
+$("#settingsGearBtn").onclick = openSettingsModal;
+$("#settingsCloseBtn").onclick = closeSettingsModal;
+// Click on the backdrop (outside the modal) closes the modal
+$("#settingsModal").addEventListener("click", (e) => {
+  if (e.target.id === "settingsModal") closeSettingsModal();
+});
+// Esc closes the modal
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && isSettingsModalOpen()) closeSettingsModal();
+});
+
+// GitHub token: save / clear
+$("#ghTokenSaveBtn").onclick = () => {
+  const t = $("#ghTokenInput").value.trim();
+  if (!t) { flashModal("ghTokenFlash", "Paste a token first.", false); return; }
+  send({ type: "setToken", token: t });
+  $("#ghTokenInput").value = "";
+  // The host will reply with tokenSet -> handleMessage updates state.hasToken
+  // -> refreshModalStatusBadges() rerenders the badge.
+  // Show a brief "saving…" flash; the actual "stored" badge comes from
+  // the next `state` message.
+  flashModal("ghTokenFlash", "Saving…", true);
+  // After a short delay, force a state refresh so the badge updates
+  setTimeout(() => send({ type: "getState" }), 400);
+};
+$("#ghTokenClearBtn").onclick = () => {
+  send({ type: "clearToken" });
+  flashModal("ghTokenFlash", "Cleared.", true);
+  setTimeout(() => send({ type: "getState" }), 400);
+};
+
+// Appetize key: save / clear
+$("#appetizeKeySaveBtn").onclick = () => {
+  const k = $("#appetizeKeyInputModal").value.trim();
+  if (!k) { flashModal("appetizeKeyFlash", "Paste a key first.", false); return; }
+  send({ type: "setAppetizeKey", key: k });
+  $("#appetizeKeyInputModal").value = "";
+  flashModal("appetizeKeyFlash", "Saving…", true);
+  setTimeout(() => send({ type: "getState" }), 400);
+};
+$("#appetizeKeyClearBtn").onclick = () => {
+  send({ type: "clearAppetizeKey" });
+  flashModal("appetizeKeyFlash", "Cleared.", true);
+  setTimeout(() => send({ type: "getState" }), 400);
+};
+$("#appetizePushSecretBtn").onclick = () => {
+  // Open GitHub's secrets page in the browser so the user can add
+  // APPETIZE_API_KEY manually. Tries the active project's repo first,
+  // falls back to the user's global secrets page.
+  send({ type: "openSecretsPage" });
+  flashModal("appetizeKeyFlash", "Opening GitHub secrets page… Add: Name=APPETIZE_API_KEY, Value=your Appetize token.", true);
+};
+
+// GitHub MCP auto-config
+$("#configureGithubMcpBtn").onclick = () => {
+  send({ type: "configureGithubMcp" });
+  flashModal("githubMcpFlash", "Configuring…", true);
+};
+$("#removeGithubMcpBtn").onclick = () => {
+  send({ type: "removeGithubMcp" });
+  flashModal("githubMcpFlash", "Removing…", true);
+};
+
+// Intercept all <a data-url> clicks
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-url]");
+  if (a) {
+    e.preventDefault();
+    send({ type: "openExternal", url: a.dataset.url });
+    return;
+  }
+  // Inline "Enable live preview" button in the Appetize box
+  const enableBtn = e.target.closest("#enableAppetizeBtn");
+  if (enableBtn) {
+    e.preventDefault();
+    const input = document.querySelector("#appetizeKeyInput");
+    const key = input ? input.value.trim() : "";
+    if (!key) {
+      footer("Enter an Appetize API key first.");
+      if (input) input.focus();
+      return;
+    }
+    if (!state.lastResult || !state.lastResult.artifacts) {
+      footer("No build result available. Cannot enable live preview.");
+      return;
+    }
+    const apkArtifact = state.lastResult.artifacts.find((x) => x.name === "apk");
+    if (!apkArtifact) {
+      footer("No APK artifact in the build result. Cannot enable live preview.");
+      return;
+    }
+    // Disable the button + show in-flight state
+    enableBtn.disabled = true;
+    enableBtn.textContent = "Uploading…";
+    footer("Uploading APK to Appetize.io…");
+    send({
+      type: "enableAppetize",
+      key,
+      archiveDownloadUrl: apkArtifact.archiveDownloadUrl,
+    });
+  }
+});
+
+// ---- Tab switching -------------------------------------------------------
+function switchTab(tabName) {
+  $$(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tabName));
+  $$(".tab-pane").forEach((p) => p.classList.toggle("active", p.id === "tab-" + tabName));
+  const footer = document.querySelector("footer");
+  if (footer) footer.style.display = tabName === "create" ? "flex" : "none";
+  if (tabName === "projects") loadProjectsTab();
+  if (tabName === "test") loadTestTab();
+}
+
+$$(".tab-btn").forEach((btn) => {
+  btn.onclick = () => switchTab(btn.dataset.tab);
+});
+
+// ---- Projects tab --------------------------------------------------------
+async function loadProjectsTab() {
+  const list = $("#projectsList");
+  if (!list) return;
+  list.innerHTML = '<p style="color: var(--muted); text-align: center; padding: 40px 0;">Loading your GitHub repos…</p>';
+  // Ask the host to fetch repos — reuse the existing message channel
+  send({ type: "listProjects" });
+}
+
+// Handle the listProjects response
+// (added to handleMessage switch — see below)
+
+// ---- Init ----------------------------------------------------------------
+renderProjectType();
+renderPlatform();
+renderFramework();
+goToStep(1);
+send({ type: "getState" });
+send({ type: "checkResumable" }); // offers to resume an interrupted run
+</script>
+</body>
+</html>
