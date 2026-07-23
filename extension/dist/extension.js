@@ -94,6 +94,12 @@ async function activate(context) {
     console.error("[CreateProject] failed to register command:", err);
   }
 
+  try {
+    require("../autocomplete/inline-completion.js").register(context);
+  } catch (err) {
+    console.error("[InlineCompletions] failed to register:", err);
+  }
+
   return originalResult;
 }
 

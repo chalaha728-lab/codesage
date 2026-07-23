@@ -333,3 +333,59 @@ Follow-ups / known gaps: this was NOT actually tested inside a live VS Code
   that infrastructure "already exists" without grepping the actual current
   file to confirm it — a previous session's description turned out to be
   inaccurate here and shipped a crash.
+
+--------------------------------------------------------------------
+[2026-07-23] PLAN — Claude (Sonnet)
+--------------------------------------------------------------------
+User request: "what about inline suggestions" — following up on the feature
+Cline's session planned/started (commits 4e35689/07bc075).
+Planned changes:
+  - Audit whether inline completions actually work end-to-end.
+  - If gaps found, close them per Cline's own PLAN entry so the feature is
+    live, not dead code.
+--------------------------------------------------------------------
+[2026-07-23] RESULT — Claude (Sonnet)
+--------------------------------------------------------------------
+Status: DONE
+Root cause: Cline's PLAN entry described 4 planned changes, but the "feat:
+  add inline completions module" commit only actually shipped item 1
+  (extension/autocomplete/inline-completion.js). Items 2-4 were never
+  applied: extension/dist/extension.js never called
+  require("../autocomplete/inline-completion.js").register(context), and
+  extension/package.json had zero configuration properties / commands for
+  it. Net effect: the module existed on disk but was completely inert —
+  activate() never loaded it, so no InlineCompletionItemProvider was ever
+  registered and nothing in Settings could turn it on.
+What changed:
+  - extension/dist/extension.js: added
+    require("../autocomplete/inline-completion.js").register(context) in a
+    try/catch, right after registerCreateProjectCommand(context) in
+    activate() — mirrors the existing pattern exactly, per Cline's own plan.
+  - extension/package.json: added the 7 configuration properties
+    (codesage.inlineCompletions.enabled [default false — opt-in, matches
+    Cline's stated quota-safety rationale], .model, .baseUrl, .debounceMs,
+    .trigger, .maxPrefixChars, .maxSuffixChars) and 2 commands
+    (codesage.toggleInlineCompletions, codesage.setInlineCompletionsApiKey)
+    — command IDs verified to exactly match what
+    inline-completion.js's register() actually calls
+    vscode.commands.registerCommand() with, so no ID mismatch.
+Verified how: node --check on extension.js and inline-completion.js;
+  package.json validated as parseable JSON; grepped the module source to
+  confirm the two command IDs added to package.json match what the module
+  registers verbatim. NOT tested in a live VS Code instance (no runtime
+  available here) — user should confirm after reinstalling that: (1) the
+  "CodeSage: Toggle Inline Completions" command appears in the Command
+  Palette, (2) toggling it and setting an API key via "CodeSage: Set Inline
+  Completions API Key" actually produces ghost-text suggestions while
+  typing.
+Follow-ups / known gaps:
+  - Feature ships OFF by default (codesage.inlineCompletions.enabled=false)
+    — user must explicitly enable it and either have Cline-managed
+    credentials already configured or set a dedicated API key via the new
+    command.
+  - Cline's own PLAN flagged uncertainty about the exact Cline storage key
+    names for API keys inside the 23MB extension.original.js bundle — this
+    was not independently re-verified in this session; if
+    resolveClineCredentials() silently returns null against real user data,
+    the dedicated-key fallback path (VS Code settings + secrets) is the one
+    that will actually need to work.

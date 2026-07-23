@@ -243,6 +243,14 @@
         "command": "codesage.reconstructTaskHistory",
         "title": "Reconstruct Task History",
         "category": "Cline"
+      },
+      {
+        "command": "codesage.toggleInlineCompletions",
+        "title": "CodeSage: Toggle Inline Completions"
+      },
+      {
+        "command": "codesage.setInlineCompletionsApiKey",
+        "title": "CodeSage: Set Inline Completions API Key"
       }
     ],
     "keybindings": [
@@ -362,7 +370,47 @@
     },
     "configuration": {
       "title": "CodeSage",
-      "properties": {}
+      "properties": {
+        "codesage.inlineCompletions.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable ghost-text inline code completions. Off by default \u2014 uses your configured LLM key on every trigger."
+        },
+        "codesage.inlineCompletions.model": {
+          "type": "string",
+          "default": "",
+          "description": "Dedicated model for inline completions (recommended: a fast/cheap model separate from your chat model). Falls back to your chat provider's model if left blank."
+        },
+        "codesage.inlineCompletions.baseUrl": {
+          "type": "string",
+          "default": "https://openrouter.ai/api/v1",
+          "description": "Base URL for the inline-completions API (used only when falling back to the dedicated API key setting)."
+        },
+        "codesage.inlineCompletions.debounceMs": {
+          "type": "number",
+          "default": 400,
+          "description": "Milliseconds to wait after typing stops before requesting a completion."
+        },
+        "codesage.inlineCompletions.trigger": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "manual"
+          ],
+          "default": "auto",
+          "description": "Trigger completions automatically while typing, or only on manual invoke."
+        },
+        "codesage.inlineCompletions.maxPrefixChars": {
+          "type": "number",
+          "default": 3000,
+          "description": "Max characters of code before the cursor sent as context."
+        },
+        "codesage.inlineCompletions.maxSuffixChars": {
+          "type": "number",
+          "default": 1500,
+          "description": "Max characters of code after the cursor sent as context."
+        }
+      }
     }
   },
   "scripts": {
