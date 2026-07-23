@@ -93,7 +93,30 @@ Follow this protocol exactly, every session, no exceptions.
   relying on isn't present in the current file, say so and re-apply or flag
   it rather than assuming it silently still works.
 
-## 5. Tone / behavior
+## 5. Release workflow — keep GitHub and the installable .vsix in lockstep
+
+The `.vsix` the user installs must always be built from the exact same tree
+that's committed to GitHub — never from an uncommitted or divergent state.
+Order matters:
+
+1. Make and verify the edit(s) (see section 4 — `node --check` both bundles).
+2. Log the PLAN/RESULT entries in `history.txt` (sections 2-3 above).
+3. `git add` / `git commit` / `git push` to `chalaha728-lab/codesage` `main`.
+   This is the source of truth — GitHub reflects reality first.
+4. Only then repack the `.vsix` from that same committed tree:
+   `zip -r -X -q out.vsix . -x ".*" -x "AGENTS.md" -x "history.txt" -x ".git/*"`
+   (AGENTS.md and history.txt are repo-only docs, not extension files — they
+   must never end up inside the installable package).
+5. Verify the package with `unzip -t` before handing it to the user.
+6. Hand the user the `.vsix` for manual install (Extensions → `...` → Install
+   from VSIX) — this environment has no remote-install access to the user's
+   local VS Code, so every update requires a manual reinstall on their end.
+
+If a session only pushes to GitHub without repacking, or only hands over a
+`.vsix` without pushing first, say so explicitly — don't let the two drift
+silently out of sync.
+
+## 6. Tone / behavior
 
 - Be explicit about root causes, not just symptoms. This codebase has a
   history of layered bugs where fixing one symptom revealed the real one

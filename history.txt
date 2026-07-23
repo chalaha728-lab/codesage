@@ -208,3 +208,28 @@ Verified how: manual review of file content; not a code change, no syntax
 Follow-ups / known gaps: earlier entries in this file predate the
   PLAN/RESULT format and remain in narrative style — left as-is per the
   append-only rule in AGENTS.md; only new entries need to follow the format.
+
+--------------------------------------------------------------------
+[2026-07-23] PLAN — Claude (Sonnet)
+--------------------------------------------------------------------
+User request: "upgrading the extension and every update you should be same
+with the one on github" — i.e. establish a standing workflow so the
+installable .vsix always matches what's committed to GitHub, never diverges.
+Planned changes:
+  - AGENTS.md: add a "release workflow" section codifying: patch tree ->
+    node --check both bundles -> commit+push to GitHub (source of truth) ->
+    repack .vsix from that exact same tree (excluding AGENTS.md/history.txt)
+    -> hand to user. No .vsix should ever be built from an uncommitted or
+    divergent tree.
+Assumptions: user installs the .vsix manually each time (no remote install
+  access to their local VS Code from this environment).
+--------------------------------------------------------------------
+[2026-07-23] RESULT — Claude (Sonnet)
+--------------------------------------------------------------------
+Status: DONE
+What changed:
+  - AGENTS.md: added "Release workflow" section (see file) formalizing the
+    commit-then-package order and the exclusion list for the .vsix.
+Root cause: n/a (process change).
+Verified how: manual review.
+Follow-ups: none.
