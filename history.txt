@@ -481,3 +481,82 @@ Follow-ups / known gaps:
     against a live install — flagging in case it turns out this specific
     build has a hybrid or different resolution path than what the grep
     evidence suggests.
+
+--------------------------------------------------------------------
+[2026-07-23] PLAN — Claude (Sonnet)
+--------------------------------------------------------------------
+User request: reported the ENTIRE CodeSage webview (both Chat and CodeSage
+tabs, not just Settings) went blank after installing the previous build and
+reloading the window.
+Planned changes:
+  - Root-cause the total webview crash (worse than the earlier Settings-only
+    blank panel) introduced by the inline-completions webview UI insertion.
+  - Rebuild extension/webview-ui/build/assets/index.js from the last known
+    working commit (28cefbb) and re-apply the CsInlineCompletionsPanel
+    insertion correctly this time.
+--------------------------------------------------------------------
+[2026-07-23] RESULT — Claude (Sonnet)
+--------------------------------------------------------------------
+Status: DONE
+Root cause: the previous session inserted `const CsInlineCompletionsPanel=
+()=>{...};` as what was assumed to be a new standalone top-level statement
+  immediately before the `U8t=({renderSectionHeader...` component. In
+  reality, per acorn AST analysis, `U8t` is NOT its own statement — it's one
+  declarator inside a single giant `const Kv=...,U8t=...;` VariableDeclaration
+  chain spanning ~1600 characters. Splicing a `const X=...;` in via plain
+  string replacement immediately after a comma inside that chain produces
+  `...,const CsInlineCompletionsPanel=()=>{...};U8t=(...)=>{...}` — this
+  IS invalid syntax (`const` cannot appear as a declarator inside an existing
+  `const` chain), but bizarrely `node --check` did NOT flag it as a
+  SyntaxError in the full 700KB+ file (confirmed via isolated repro that the
+  identical minimal pattern DOES fail node --check on its own — the
+  discrepancy in the full file was not fully explained, possibly a parser
+  recovery/edge-case specific to file size or surrounding context, and was
+  not chased further given the severity of just fixing it). This is the
+  second time in this session that `node --check` passing was insufficient
+  to guarantee webview correctness — lesson for future sessions: node --check
+  catches SyntaxErrors but this session found at least one case where a
+  clearly-invalid construct did not trigger one in a very large file; when
+  in doubt, verify with a proper parser (acorn) that the intended insertion
+  point is a genuine statement boundary, not just that `node --check`
+  returns 0.
+What changed:
+  - extension/webview-ui/build/assets/index.js: rebuilt fresh from commit
+    28cefbb (last confirmed-working state) rather than patching forward from
+    the broken file, to guarantee no residual corruption. Re-applied the
+    CsInlineCompletionsPanel component correctly this time — as an
+    additional declarator WITHIN the existing `const Kv=...,U8t=...`
+    chain (`...,CsInlineCompletionsPanel=()=>{...},U8t=...`, no `const`
+    keyword of its own), verified via acorn AST parse that the resulting
+    chain's declarator names are exactly `Kv, CsInlineCompletionsPanel, U8t`
+    as expected. The render-site insertion (into the Kv children array via
+    bracket-balance scan) was re-verified as unaffected/still correct and
+    reapplied identically.
+  - No changes needed to extension/dist/extension.original.js,
+    extension/autocomplete/inline-completion.js, or package.json — those
+    were not implicated in this crash (all node --check clean, and their
+    logic is independent of the webview bundle's module-scope statement
+    structure).
+Verified how: node --check on all 4 touched/relevant files; additionally
+  ran the full webview bundle through `acorn.parse()` (ecmaVersion 2022,
+  sourceType module) and confirmed it produces a complete AST with no parse
+  error, and specifically confirmed the declarator-name list of the chain
+  containing the new component. Re-ran the same declared-vs-used identifier
+  audit from the earlier "blank Settings panel" fix — zero gaps.
+Follow-ups / known gaps:
+  - Still NOT tested in a live VS Code instance. This is the third
+    round-trip on this specific webview file within one session (blank
+    Settings -> fixed -> blank entire app -> fixed again) — strongly
+    recommend the user verify this specific build actually loads (both tabs
+    visible, Settings > API Configuration opens and shows Key Management +
+    the new Inline Completions panel) before any further feature work is
+    layered on top. If it's still broken, the most likely next suspect is a
+    RUNTIME (not syntax) error — e.g. QS() call signature, or the y.jsx/y.jsxs
+    helper contract — since syntax-level correctness is now independently
+    confirmed via a real parser, not just node --check.
+  - Recommend any future session inserting NEW top-level component
+    definitions into this webview bundle use the acorn-based approach
+    demonstrated here (find the containing top-level statement via AST,
+    join existing chains by name only with no `const`/`let`/`var` keyword,
+    or insert a fully separate statement BEFORE/AFTER a chain's exact
+    start/end offsets) rather than plain string-adjacent insertion.
