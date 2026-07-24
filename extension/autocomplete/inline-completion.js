@@ -348,6 +348,106 @@ class CodeSageInlineCompletionProvider {
 // Registration entry point — called by extension.js wrapper.
 // ----------------------------------------------------------------------------
 
+async function saveConfig(context, patch) {
+  const cfg = await readConfig(context);
+  const next = { ...cfg, ...patch };
+  await context.secrets.store(CONFIG_SECRET_KEY, JSON.stringify(next));
+  return next;
+}
+
+/**
+ * Native VS Code QuickPick flow to choose provider + model. Deliberately NOT
+ * a webview UI — this repo's minified webview bundle has broken the whole
+ * panel twice from direct-edit attempts (see history.txt). QuickPick/InputBox
+ * are stable, built-in VS Code APIs that don't touch that bundle at all.
+ */
+async function runConfigureFlow(context) {
+  const providerItems = Object.keys(PROVIDER_BASE_URLS).map((id) => ({
+    label: id,
+    description: LEGACY_KEY_MAP[id] ? `uses your existing "${id}" key` : "",
+    id,
+  }));
+
+  const providerPick = await vscode.window.showQuickPick(providerItems, {
+    title: "CodeSage Inline Completions — Provider (1/2)",
+    placeHolder: "Pick the provider to use for inline completions",
+    ignoreFocusOut: true,
+  });
+  if (!providerPick) return;
+
+  const secretName = LEGACY_KEY_MAP[providerPick.id];
+  let hasKey = false;
+  try {
+    hasKey = !!(await context.secrets.get(secretName));
+  } catch (e) {
+    hasKey = false;
+  }
+  if (!hasKey && providerPick.id !== "ollama") {
+    const choice = await vscode.window.showWarningMessage(
+      `No API key found for "${providerPick.id}" yet. Add one under CodeSage's ` +
+        `Key Management for this provider first — inline completions reuses ` +
+        `that same key (including rotation, if you have multiple).`,
+      "Continue anyway",
+      "Cancel"
+    );
+    if (choice !== "Continue anyway") return;
+  }
+
+  const suggestedModels = SUGGESTED_MODELS[providerPick.id] || [];
+  const modelItems = [
+    ...suggestedModels.map((m) => ({ label: m })),
+    { label: "$(edit) Custom model id…", custom: true },
+  ];
+  const modelPick = await vscode.window.showQuickPick(modelItems, {
+    title: "CodeSage Inline Completions — Model (2/2)",
+    placeHolder: `Pick a model for ${providerPick.id}`,
+    ignoreFocusOut: true,
+  });
+  if (!modelPick) return;
+
+  let modelId = modelPick.label;
+  if (modelPick.custom) {
+    modelId = await vscode.window.showInputBox({
+      title: "CodeSage Inline Completions — Custom model id",
+      placeHolder: "exact model id, e.g. gpt-4o-mini",
+      ignoreFocusOut: true,
+    });
+    if (!modelId) return;
+  }
+
+  await saveConfig(context, {
+    enabled: true,
+    providerId: providerPick.id,
+    modelId,
+  });
+  vscode.window.showInformationMessage(
+    `CodeSage inline completions: ON — ${providerPick.id} / ${modelId}`
+  );
+}
+
+// A short curated list of fast/cheap models per provider for the QuickPick.
+// Users can always pick "Custom model id…" for anything else.
+const SUGGESTED_MODELS = {
+  openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1-nano"],
+  "openai-native": ["gpt-4o-mini", "gpt-4.1-mini"],
+  openrouter: [
+    "openai/gpt-4o-mini",
+    "meta-llama/llama-3.1-8b-instruct",
+    "google/gemini-2.0-flash-001",
+  ],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+  deepseek: ["deepseek-chat", "deepseek-coder"],
+  together: ["meta-llama/Llama-3.3-70B-Instruct-Turbo"],
+  fireworks: ["accounts/fireworks/models/llama-v3p1-8b-instruct"],
+  mistral: ["codestral-latest", "mistral-small-latest"],
+  xai: ["grok-2-latest"],
+  moonshot: ["moonshot-v1-8k"],
+  cerebras: ["llama-3.3-70b", "llama3.1-8b"],
+  sambanova: ["Meta-Llama-3.1-8B-Instruct"],
+  qwen: ["qwen2.5-coder-32b-instruct"],
+  ollama: ["qwen2.5-coder:7b", "codellama:7b"],
+};
+
 function register(context) {
   const provider = new CodeSageInlineCompletionProvider(context);
 
@@ -357,16 +457,28 @@ function register(context) {
   );
   context.subscriptions.push(disposable);
 
-  // Convenience command — flips the SAME config the webview panel manages
-  // (not a separate vscode setting), so both stay in sync.
+  // Main entry point — pick provider + model, reusing existing keys.
+  const configureCmd = vscode.commands.registerCommand(
+    "codesage.configureInlineCompletions",
+    () => runConfigureFlow(context)
+  );
+  context.subscriptions.push(configureCmd);
+
+  // Quick on/off toggle for whatever provider/model was last configured.
   const toggleCmd = vscode.commands.registerCommand(
     "codesage.toggleInlineCompletions",
     async () => {
       const cfg = await readConfig(context);
-      const next = { ...cfg, enabled: !cfg.enabled };
-      await context.secrets.store(CONFIG_SECRET_KEY, JSON.stringify(next));
+      if (!cfg.providerId || !cfg.modelId) {
+        vscode.window.showInformationMessage(
+          "CodeSage inline completions: not configured yet — running setup…"
+        );
+        await runConfigureFlow(context);
+        return;
+      }
+      const next = await saveConfig(context, { enabled: !cfg.enabled });
       vscode.window.showInformationMessage(
-        `CodeSage inline completions: ${next.enabled ? "ON" : "OFF"}`
+        `CodeSage inline completions: ${next.enabled ? "ON" : "OFF"} (${next.providerId} / ${next.modelId})`
       );
     }
   );

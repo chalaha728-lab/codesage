@@ -560,3 +560,90 @@ Follow-ups / known gaps:
     join existing chains by name only with no `const`/`let`/`var` keyword,
     or insert a fully separate statement BEFORE/AFTER a chain's exact
     start/end offsets) rather than plain string-adjacent insertion.
+
+--------------------------------------------------------------------
+[2026-07-23] PLAN — Claude (Sonnet)
+--------------------------------------------------------------------
+User request: "of fuck it not working look at how other agent handle or
+clone read their code and apply" — after TWO consecutive breakages of the
+webview from React-tree code injection (blank Settings, then blank entire
+app), user directed looking at how the codebase's own prior work / the
+Cline architecture handles this to find a safer pattern.
+Planned changes:
+  - Stop injecting new component definitions into the massive minified React
+    bundle's module-scope statement chains entirely — this approach has now
+    broken the webview twice in this session despite increasingly careful
+    verification (plain node --check, then full acorn AST verification).
+  - Found the actual safer precedent already present IN THIS BUNDLE: an
+    existing IIFE at the tail of extension/webview-ui/build/assets/index.js
+    (the "cosmetic DOM relocation" for the auto-approve chip, added by a
+    prior agent) that operates entirely OUTSIDE the React component tree via
+    vanilla DOM APIs + MutationObserver, wrapped in try/catch. Apply the same
+    pattern for the Inline Completions settings panel instead of a React
+    injection.
+--------------------------------------------------------------------
+[2026-07-23] RESULT — Claude (Sonnet)
+--------------------------------------------------------------------
+Status: DONE
+What changed:
+  - extension/webview-ui/build/assets/index.js: reverted ALL React-tree
+    injection (CsInlineCompletionsPanel component + its render-site
+    insertion into the U8t/Kv chain) back to the clean 28cefbb baseline —
+    zero bytes of the original minified bundle are touched. Appended a new,
+    fully self-contained IIFE at the very end of the file (same position/
+    style as the existing auto-approve relocation IIFE) that:
+      - Reuses window.__clineVsCodeApi (the SAME acquireVsCodeApi() handle
+        the React app already stashed there — acquireVsCodeApi() can only
+        be called once per webview, so this is the only safe way to get a
+        postMessage channel from outside React).
+      - Implements its own tiny request/response layer over
+        window.addEventListener('message') + vscodeApi.postMessage(),
+        matching the {type, codesage_request_id, ...} protocol the host
+        already speaks (reverse-engineered from the app's own QS() helper),
+        talking to the SAME codesage_getInlineCompletionsConfig /
+        codesage_setInlineCompletionsConfig handlers added earlier this
+        session in extension.original.js — no backend changes needed.
+      - Builds the panel (enable toggle, provider <select>, model <select>
+        with curated per-provider models + "Custom..." freeform fallback)
+        with plain document.createElement calls, no JSX/React involved.
+      - Locates the Key Management section via a stable text-content anchor
+        ("Key Management (" — read directly off the app's own rendered
+        header text) and inserts the panel as a DOM sibling right after it.
+      - A MutationObserver + "ensureInserted" self-heal routine
+        (debounced 150ms) re-inserts the panel if React's own re-renders
+        remove it — same reactive-repair strategy the existing auto-approve
+        IIFE implicitly relies on, made explicit and continuous here.
+      - Wrapped in try/catch matching the existing pattern; failure here can
+        only mean "the panel doesn't appear," never "the app crashes."
+  - No changes to extension/dist/extension.original.js,
+    extension/autocomplete/inline-completion.js, or package.json in this
+    round — the backend message handlers and credential-resolution logic
+    from the prior session's work are unaffected and reused as-is.
+Verified how: node --check on the combined webview file; additionally
+  parsed the FULL combined file with acorn (ecmaVersion 2022, sourceType
+  module) and confirmed a clean AST with the new IIFE appearing as a single
+  well-formed top-level ExpressionStatement at the end — not spliced into
+  any existing statement/chain, which is what caused both prior failures.
+  node --check also re-run on the other 3 touched-in-prior-rounds files
+  (extension.original.js, inline-completion.js, extension.js) to confirm no
+  regressions there.
+Follow-ups / known gaps:
+  - Still not tested in a live VS Code instance — this is the pattern that
+    should finally be safe regardless, since it cannot alter React's own
+    control flow or syntax, but the DOM-anchor text match ("Key Management
+    (") and the self-heal timing (150ms debounce) are unverified against
+    real render timing/DOM structure in an actual webview. If the panel
+    doesn't appear at all (as opposed to the whole app crashing), the next
+    thing to check is whether the anchor text search is finding the right
+    element, or whether CSP/webview sandboxing blocks a second independent
+    message-response loop alongside the app's own QS() one (should be fine
+    since both listen on the same window 'message' event without
+    conflicting, but unconfirmed live).
+  - Recommendation for all future sessions on this repo: DO NOT inject new
+    top-level component definitions into extension/webview-ui/build/assets/
+    index.js's React tree via string splicing, even with AST verification —
+    two separate careful attempts both required a full revert this session.
+    Prefer the vanilla-DOM-IIFE-at-file-end pattern demonstrated here (and
+    by the pre-existing auto-approve relocation code) for any future webview
+    UI additions to this specific build, unless/until the original
+    (non-minified) source becomes available to work from directly.
