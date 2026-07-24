@@ -12,191 +12,137 @@
  *   - DEBOUNCED (~400ms default) + abort-on-new-keystroke. No request pile-up.
  *   - Errors (quota/network) are caught and silently drop the ghost text.
  *     Never a modal error mid-typing.
- *   - Uses a DEDICATED model from settings (user's choice) to isolate
- *     autocomplete quota/cost from the chat model.
  *
- * Credential resolution (tries in order):
- *   1. Cline file storage (~/.cline/data/globalState.json + secrets.json).
- *      Reads `apiProvider` + the provider's API key. Only used if the provider
- *      is OpenAI-compatible (openrouter, openai) — Anthropic/Gemini use
- *      non-OpenAI request shapes and are skipped here.
- *   2. VS Code settings fallback:
- *        codesage.inlineCompletions.apiKey  (secret)
- *        codesage.inlineCompletions.baseUrl  (default: https://openrouter.ai/api/v1)
- *      This lets the user set a dedicated key for a compatible endpoint.
+ * ALL settings (enable/disable, provider, model, debounce, trigger mode,
+ * context window sizes) live in CodeSage's own "API Configuration" webview
+ * panel — there is NO VS Code settings.json / package.json configuration
+ * surface for this feature. This mirrors the request that drove this
+ * rewrite: reuse the extension's own already-configured API key system
+ * (the same provider keys + rotation used for chat) rather than requiring a
+ * separate dedicated API key. The only thing that's specific to inline
+ * completions is which provider + model to use — everything else (the
+ * actual API key, rotation across multiple keys, base URL for known
+ * providers) is resolved through the SAME storage/rotation system chat uses.
  *
- * The LLM call uses the OpenAI /v1/chat/completions shape (non-streaming),
- * which is compatible with: OpenRouter, OpenAI, Together, Groq, Fireworks,
- * Ollama, LM Studio, vLLM, etc.
+ * Storage:
+ *   - Inline-completions config (enabled/providerId/modelId) is persisted in
+ *     VS Code SecretStorage under `codesage:inlineCompletions:config`
+ *     (written by the webview via the codesage_setInlineCompletionsConfig
+ *     message handler in extension.original.js).
+ *   - The actual API key for the chosen provider is read from the SAME
+ *     VS Code SecretStorage slot the chat key-rotation system already
+ *     maintains (`__CS_LEGACY_KEY_MAP[providerId]`, e.g. "geminiApiKey") —
+ *     this is kept live-updated by count-based rotation, error-triggered
+ *     rotation, and manual key selection (see history.txt). No separate
+ *     credential entry is needed or supported.
+ *
+ * The LLM call uses the OpenAI /v1/chat/completions shape (non-streaming).
+ * Only providers with an OpenAI-compatible chat endpoint are offered in the
+ * provider dropdown (see PROVIDER_BASE_URLS below) — Anthropic/Gemini-native
+ * request shapes are out of scope for this simple completion call.
  */
 
 "use strict";
 
 const vscode = require("vscode");
-const path = require("path");
-const os = require("os");
-const fs = require("fs");
 
 // ----------------------------------------------------------------------------
-// Cline file-based storage reader (mirrors create-project/host.js pattern).
-// CodeSage (built on Cline) stores config in ~/.cline/data/, NOT in VS Code's
-// own globalState/secrets.
+// Same provider -> legacy secret-key-name map used by the chat key-rotation
+// system (extension.original.js: __CS_LEGACY_KEY_MAP). Duplicated here since
+// this module runs as a separate require() outside that bundle's closure.
+// Keep in sync if the rotation system's provider list changes.
 // ----------------------------------------------------------------------------
+const LEGACY_KEY_MAP = {
+  openai: "openAiApiKey",
+  "openai-native": "openAiNativeApiKey",
+  openrouter: "openRouterApiKey",
+  groq: "groqApiKey",
+  deepseek: "deepSeekApiKey",
+  together: "togetherApiKey",
+  fireworks: "fireworksApiKey",
+  mistral: "mistralApiKey",
+  xai: "xaiApiKey",
+  moonshot: "moonshotApiKey",
+  cerebras: "cerebrasApiKey",
+  sambanova: "sambanovaApiKey",
+  qwen: "qwenApiKey",
+  ollama: "ollamaApiKey",
+};
 
-function getClineDataDir() {
-  if (process.env.CLINE_DATA_DIR) return process.env.CLINE_DATA_DIR;
-  const base = process.env.CLINE_DIR || path.join(os.homedir(), ".cline");
-  return path.join(base, "data");
-}
+// Only OpenAI-chat-compatible endpoints are supported here.
+const PROVIDER_BASE_URLS = {
+  openai: "https://api.openai.com/v1",
+  "openai-native": "https://api.openai.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  groq: "https://api.groq.com/openai/v1",
+  deepseek: "https://api.deepseek.com/v1",
+  together: "https://api.together.xyz/v1",
+  fireworks: "https://api.fireworks.ai/inference/v1",
+  mistral: "https://api.mistral.ai/v1",
+  xai: "https://api.x.ai/v1",
+  moonshot: "https://api.moonshot.cn/v1",
+  cerebras: "https://api.cerebras.ai/v1",
+  sambanova: "https://api.sambanova.ai/v1",
+  qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  ollama: "http://localhost:11434/v1",
+};
 
-function readClineGlobalState() {
-  try {
-    const p = path.join(getClineDataDir(), "globalState.json");
-    const raw = fs.readFileSync(p, "utf8");
-    return JSON.parse(raw);
-  } catch (e) {
-    return {};
-  }
-}
+const CONFIG_SECRET_KEY = "codesage:inlineCompletions:config";
 
-function readClineSecrets() {
-  try {
-    const p = path.join(getClineDataDir(), "secrets.json");
-    const raw = fs.readFileSync(p, "utf8");
-    return JSON.parse(raw);
-  } catch (e) {
-    return {};
-  }
-}
+const DEFAULT_CONFIG = {
+  enabled: false,
+  providerId: "",
+  modelId: "",
+  debounceMs: 400,
+  trigger: "auto", // "auto" | "manual"
+  maxPrefixChars: 3000,
+  maxSuffixChars: 1500,
+};
 
 /**
- * Try to resolve credentials from Cline storage for an OpenAI-compatible
- * provider. Returns { apiKey, baseUrl, model } or null if not resolvable.
- *
- * Cline stores the provider name in globalState["apiProvider"] and the key
- * in secrets under various possible key names depending on provider.
+ * Read the persisted inline-completions config. This is the single source
+ * of truth — written exclusively by the webview's API Configuration panel
+ * via extension.original.js's codesage_setInlineCompletionsConfig handler.
  */
-function resolveClineCredentials(configModel) {
-  const gs = readClineGlobalState();
-  const secrets = readClineSecrets();
-
-  const provider = gs["apiProvider"];
-  if (!provider) return null;
-
-  // Only use Cline creds for OpenAI-compatible providers.
-  // Anthropic (/v1/messages) and Gemini (generateContent) use different
-  // request shapes — skip those and fall through to the VS Code settings.
-  const compatibleProviders = {
-    openrouter: {
-      baseUrl: "https://openrouter.ai/api/v1",
-      keyNames: ["openrouterApiKey", "apiKey"],
-    },
-    openai: {
-      baseUrl: "https://api.openai.com/v1",
-      keyNames: ["openaiApiKey", "apiKey"],
-    },
-    openaiNative: {
-      baseUrl: "https://api.openai.com/v1",
-      keyNames: ["openaiApiKey", "apiKey"],
-    },
-    deepseek: {
-      baseUrl: "https://api.deepseek.com/v1",
-      keyNames: ["deepseekApiKey", "apiKey"],
-    },
-    mistral: {
-      baseUrl: "https://api.mistral.ai/v1",
-      keyNames: ["mistralApiKey", "apiKey"],
-    },
-    together: {
-      baseUrl: "https://api.together.xyz/v1",
-      keyNames: ["togetherApiKey", "apiKey"],
-    },
-    groq: {
-      baseUrl: "https://api.groq.com/openai/v1",
-      keyNames: ["groqApiKey", "apiKey"],
-    },
-    ollama: {
-      baseUrl: "http://localhost:11434/v1",
-      keyNames: ["ollamaApiKey", "apiKey"],
-    },
-    lmstudio: {
-      baseUrl: "http://localhost:1234/v1",
-      keyNames: ["lmstudioApiKey", "apiKey"],
-    },
-  };
-
-  const info = compatibleProviders[provider];
-  if (!info) return null;
-
-  let apiKey = null;
-  for (const kn of info.keyNames) {
-    if (secrets[kn] && secrets[kn] !== undefined) {
-      apiKey = secrets[kn];
-      break;
+async function readConfig(context) {
+  try {
+    const raw = await context.secrets.get(CONFIG_SECRET_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_CONFIG, ...parsed };
     }
+  } catch (e) {
+    // fall through to defaults
   }
-  if (!apiKey) return null;
-
-  // The model: use the dedicated setting if provided, otherwise try Cline's
-  // stored model name for this provider.
-  const model = configModel || gs[`${provider}ModelId`] || gs["apiModelId"] || null;
-  if (!model) return null;
-
-  return { apiKey, baseUrl: info.baseUrl, model };
+  return { ...DEFAULT_CONFIG };
 }
 
 /**
- * Resolve credentials from VS Code settings (the dedicated fallback).
+ * Resolve the API key + base URL for the configured provider, reusing the
+ * exact same VS Code SecretStorage slot the chat key-rotation system reads
+ * and writes (see extension.original.js: __csMirrorLegacyKey /
+ * __CS_LEGACY_KEY_MAP). If the user has multiple keys configured for this
+ * provider with rotation enabled, inline completions automatically pick up
+ * whichever key is currently active — no separate setup needed.
  */
-async function resolveSettingsCredentials(context, configModel) {
-  const config = vscode.workspace.getConfiguration("codesage.inlineCompletions");
+async function resolveCredentials(context, cfg) {
+  if (!cfg.providerId || !cfg.modelId) return null;
 
-  // API key is stored in VS Code SecretStorage for security.
+  const secretName = LEGACY_KEY_MAP[cfg.providerId];
+  const baseUrl = PROVIDER_BASE_URLS[cfg.providerId];
+  if (!secretName || !baseUrl) return null; // unsupported provider
+
   let apiKey = null;
   try {
-    apiKey = await context.secrets.get("codesage.inlineCompletions.apiKey");
+    apiKey = await context.secrets.get(secretName);
   } catch (e) {
-    // ignore
+    apiKey = null;
   }
+  // Ollama runs locally and doesn't require a key.
+  if (!apiKey && cfg.providerId !== "ollama") return null;
 
-  if (!apiKey) return null;
-
-  const baseUrl =
-    (config.get("baseUrl") || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
-  const model = configModel;
-
-  if (!model) return null;
-
-  return { apiKey, baseUrl, model };
+  return { apiKey: apiKey || "ollama", baseUrl, model: cfg.modelId };
 }
-
-/**
- * Master credential resolver. Tries Cline storage first, then VS Code settings.
- */
-async function resolveCredentials(context) {
-  const config = vscode.workspace.getConfiguration("codesage.inlineCompletions");
-  const configModel = config.get("model") || "";
-
-  // 1. Try Cline storage (zero-setup if user already has CodeSage configured).
-  const cline = resolveClineCredentials(configModel);
-  if (cline) return cline;
-
-  // 2. Fall back to VS Code settings.
-  const settings = await resolveSettingsCredentials(context, configModel);
-  if (settings) return settings;
-
-  return null;
-}
-
-// ----------------------------------------------------------------------------
-// LLM call — OpenAI-compatible /v1/chat/completions (non-streaming).
-// ----------------------------------------------------------------------------
-
-const SYSTEM_PROMPT =
-  "You are an inline code completion engine. You are given the code before and after the cursor position. " +
-  "Output ONLY the code that should be inserted at the cursor. " +
-  "No explanation, no markdown fences, no leading/trailing commentary — raw code only. " +
-  "Keep completions concise (1-5 lines typically). Match the surrounding style, indentation, and language.";
 
 async function fetchCompletion({ apiKey, baseUrl, model, prefix, suffix, languageId, signal }) {
   const userMessage =
@@ -294,23 +240,15 @@ class CodeSageInlineCompletionProvider {
   }
 
   async provideInlineCompletionItems(document, position, context, token) {
-    const config = vscode.workspace.getConfiguration("codesage.inlineCompletions");
-    const enabled = config.get("enabled");
-    if (!enabled) return { items: [] };
+    const cfg = await readConfig(this.context);
+    if (!cfg.enabled) return { items: [] };
+    if (!cfg.providerId || !cfg.modelId) return { items: [] };
 
-    const model = config.get("model");
-    if (!model) return { items: [] };
-
-    const trigger = config.get("trigger") || "auto";
-    // In "manual" mode, only trigger when explicitly invoked (VS Code handles
-    // this via the editor.action.triggerSuggest command; for inline completions,
-    // manual mode means we only fire when context.triggerKind is Invoke).
-    if (trigger === "manual" && context.triggerKind !== vscode.InlineCompletionTriggerKind.Invoke) {
+    if (cfg.trigger === "manual" && context.triggerKind !== vscode.InlineCompletionTriggerKind.Invoke) {
       return { items: [] };
     }
 
-    // Don't fire in excluded languages.
-    const excludedLangs = config.get("excludedLanguages") || ["plaintext", "markdown", "log"];
+    const excludedLangs = ["plaintext", "markdown", "log"];
     if (excludedLangs.includes(document.languageId)) return { items: [] };
 
     // Abort any in-flight request (abort-on-new-keystroke).
@@ -323,9 +261,9 @@ class CodeSageInlineCompletionProvider {
       this.debounceTimer = null;
     }
 
-    const debounceMs = config.get("debounceMs") || 400;
-    const maxPrefix = config.get("maxPrefixChars") || 3000;
-    const maxSuffix = config.get("maxSuffixChars") || 1500;
+    const debounceMs = cfg.debounceMs || 400;
+    const maxPrefix = cfg.maxPrefixChars || 3000;
+    const maxSuffix = cfg.maxSuffixChars || 1500;
 
     return new Promise((resolve) => {
       this.debounceTimer = setTimeout(async () => {
@@ -334,10 +272,9 @@ class CodeSageInlineCompletionProvider {
           return;
         }
 
-        // Resolve credentials.
         let creds;
         try {
-          creds = await resolveCredentials(this.context);
+          creds = await resolveCredentials(this.context, cfg);
         } catch (e) {
           creds = null;
         }
@@ -346,7 +283,6 @@ class CodeSageInlineCompletionProvider {
           return;
         }
 
-        // Grab prefix + suffix.
         const text = document.getText();
         const offset = document.offsetAt(position);
         const prefixStart = Math.max(0, offset - maxPrefix);
@@ -354,12 +290,9 @@ class CodeSageInlineCompletionProvider {
         const prefix = text.slice(prefixStart, offset);
         const suffix = text.slice(offset, suffixEnd);
 
-        // The line the cursor is on (for indentation alignment).
         const line = document.lineAt(position.line);
         const prefixLine = line.text.slice(0, position.character);
 
-        // If the prefix is just whitespace and very short, skip (avoid trivial
-        // completions at the start of an empty file).
         if (prefix.trim().length === 0 && prefix.length < 3) {
           resolve({ items: [] });
           return;
@@ -399,8 +332,6 @@ class CodeSageInlineCompletionProvider {
           if (err.name === "AbortError") {
             // Normal — a newer keystroke aborted this request.
           } else {
-            // Silently fail — log to output channel for debugging but never
-            // surface a modal error mid-typing.
             console.error("[CodeSage InlineCompletions]", err.message);
           }
           resolve({ items: [] });
@@ -418,11 +349,6 @@ class CodeSageInlineCompletionProvider {
 // ----------------------------------------------------------------------------
 
 function register(context) {
-  const config = vscode.workspace.getConfiguration("codesage.inlineCompletions");
-  const enabled = config.get("enabled");
-
-  // Register the inline completion provider for ALL languages.
-  // VS Code will call provideInlineCompletionItems as the user types.
   const provider = new CodeSageInlineCompletionProvider(context);
 
   const disposable = vscode.languages.registerInlineCompletionItemProvider(
@@ -431,46 +357,25 @@ function register(context) {
   );
   context.subscriptions.push(disposable);
 
-  // Toggle command — lets the user turn completions on/off quickly.
+  // Convenience command — flips the SAME config the webview panel manages
+  // (not a separate vscode setting), so both stay in sync.
   const toggleCmd = vscode.commands.registerCommand(
     "codesage.toggleInlineCompletions",
     async () => {
-      const cfg = vscode.workspace.getConfiguration("codesage.inlineCompletions");
-      const current = cfg.get("enabled");
-      await cfg.update("enabled", !current, vscode.ConfigurationTarget.Global);
+      const cfg = await readConfig(context);
+      const next = { ...cfg, enabled: !cfg.enabled };
+      await context.secrets.store(CONFIG_SECRET_KEY, JSON.stringify(next));
       vscode.window.showInformationMessage(
-        `CodeSage inline completions: ${!current ? "ON" : "OFF"}`
+        `CodeSage inline completions: ${next.enabled ? "ON" : "OFF"}`
       );
     }
   );
   context.subscriptions.push(toggleCmd);
 
-  // Command to set the API key (stores in SecretStorage).
-  const setKeyCmd = vscode.commands.registerCommand(
-    "codesage.setInlineCompletionsApiKey",
-    async () => {
-      const key = await vscode.window.showInputBox({
-        prompt: "Enter the API key for CodeSage inline completions",
-        password: true,
-        placeHolder: "sk-or-v1-... / sk-... / etc.",
-        ignoreFocusOut: true,
-      });
-      if (key) {
-        await context.secrets.store("codesage.inlineCompletions.apiKey", key);
-        vscode.window.showInformationMessage(
-          "CodeSage inline completions API key saved."
-        );
-      }
-    }
-  );
-  context.subscriptions.push(setKeyCmd);
-
-  // Show status bar item if enabled.
-  if (enabled) {
-    provider.statusBarItem.show();
-  }
-
-  console.log("[CodeSage] Inline completions provider registered (enabled:", enabled + ")");
+  readConfig(context).then((cfg) => {
+    if (cfg.enabled) provider.statusBarItem.show();
+    console.log("[CodeSage] Inline completions provider registered (enabled:", cfg.enabled + ")");
+  });
 }
 
 module.exports = { register };

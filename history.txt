@@ -389,3 +389,95 @@ Follow-ups / known gaps:
     resolveClineCredentials() silently returns null against real user data,
     the dedicated-key fallback path (VS Code settings + secrets) is the one
     that will actually need to work.
+
+--------------------------------------------------------------------
+[2026-07-23] PLAN — Claude (Sonnet)
+--------------------------------------------------------------------
+User request: "no make all settings in codesage api config setting and make
+use already set up api system the only thing that has to be its own is
+model and provider dropdown" — remove the native VS Code settings.json
+config + dedicated API key for inline completions entirely; move every
+setting into CodeSage's own webview "API Configuration" tab; reuse the
+already-configured provider key/rotation system for credentials; the only
+new/dedicated UI is a provider + model dropdown for inline completions.
+Planned changes:
+  - extension/package.json: remove all 7 codesage.inlineCompletions.*
+    configuration properties added last session, and the
+    codesage.setInlineCompletionsApiKey command (no longer needed).
+  - extension/autocomplete/inline-completion.js: rewrite credential/config
+    resolution — drop the ~/.cline/data file-based lookup and the
+    vscode.workspace.getConfiguration() reads entirely. Config
+    (enabled/providerId/modelId/debounce/trigger/context sizes) now lives
+    in one VS Code SecretStorage JSON blob (codesage:inlineCompletions:config)
+    written exclusively by the webview. The API key is read directly from
+    the SAME SecretStorage slot the chat key-rotation system already
+    maintains per provider (__CS_LEGACY_KEY_MAP[providerId]), so inline
+    completions automatically benefit from existing multi-key rotation with
+    zero extra setup.
+  - extension/dist/extension.original.js: add
+    csGetICConfig/csSetICConfig (persistence, mirrors the threshold-storage
+    pattern) and two message handlers
+    (codesage_getInlineCompletionsConfig/codesage_setInlineCompletionsConfig).
+  - extension/webview-ui/build/assets/index.js: add a new
+    CsInlineCompletionsPanel component rendered once inside the API
+    Configuration tab (component U8t, inside the Kv-wrapped children array —
+    located via a bracket-balance scan of the minified bundle, not by hand,
+    given how easy it is to miscount braces in 400KB of minified JS).
+    Enable toggle + provider dropdown + model dropdown (curated fast-model
+    list per provider, "Custom..." free-text fallback). Provider list
+    restricted to OpenAI-chat-compatible providers only (Gemini/Anthropic
+    native shapes aren't supported by the simple completion call this
+    module makes).
+Assumptions: confirmed via grep that VS Code SecretStorage
+  (`context.secrets`, aliased as `kot` inside the ege module) IS the real
+  credential store the chat system uses — `initKeyRotation` is actually
+  invoked at activation with `t.secrets` (search initially missed this
+  because of a different destructuring alias `r` rather than a literal
+  name — worth remembering for future greps in this file: match by import
+  key name `initKeyRotation:`, not by assumed local alias). This
+  contradicts inline-completion.js's OWN prior doc-comment claiming
+  CodeSage stores credentials in ~/.cline/data/*.json files — that comment
+  was not re-verified against this actual patched build and is presumed
+  wrong for this codebase; the file-based path was removed rather than kept
+  as a fallback, to avoid two divergent credential sources.
+--------------------------------------------------------------------
+[2026-07-23] RESULT — Claude (Sonnet)
+--------------------------------------------------------------------
+Status: DONE
+What changed: as planned above. Full file list:
+  - extension/package.json (removed 7 properties + 1 command)
+  - extension/autocomplete/inline-completion.js (rewritten: config +
+    credential resolution sections; fetchCompletion/cleanCompletion logic
+    preserved unchanged; class + register() updated to read the new
+    single JSON config instead of vscode settings)
+  - extension/dist/extension.original.js (2 new ege-module functions + 2
+    new message-handler cases)
+  - extension/webview-ui/build/assets/index.js (new CsInlineCompletionsPanel
+    component + 1 render-site insertion into the API Configuration tab)
+Verified how: node --check on all 4 JS files individually passed;
+  package.json re-validated as parseable JSON; manually audited every
+  csIc*-prefixed identifier in the new webview component for
+  declared-vs-used gaps (learned this lesson the hard way earlier this
+  session — see the "blank Settings panel" entry above) — all accounted
+  for, including three that are declared via a single chained `const a=,
+  b=, c=` statement rather than separate `const` statements, which a naive
+  regex audit initially flagged as false positives.
+Follow-ups / known gaps:
+  - NOT tested in a live VS Code instance — no runtime available here.
+    User should confirm after reinstalling: (1) Settings > API
+    Configuration shows a new "Inline Completions" section below Key
+    Management, (2) toggling it on, picking a provider that already has a
+    key configured, and picking/typing a model actually produces
+    completions, (3) rotating/adding keys for that provider under Key
+    Management is reflected in inline completions without any extra step.
+  - Provider dropdown is intentionally limited to OpenAI-chat-compatible
+    providers (14 of them) — Gemini/Anthropic are NOT offered since this
+    module's HTTP call is OpenAI /v1/chat/completions shaped and doesn't
+    speak their native APIs. If the user wants Gemini/Anthropic support
+    here, that needs a second request-shape branch, not attempted in this
+    session.
+  - The credential-source correction (SecretStorage vs ~/.cline/data) is a
+    read of the actual bundle, not something independently runtime-verified
+    against a live install — flagging in case it turns out this specific
+    build has a hybrid or different resolution path than what the grep
+    evidence suggests.
